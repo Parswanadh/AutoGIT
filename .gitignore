@@ -57,6 +57,9 @@ logs/
 generated_repos/
 output/
 temp_repos/
+remotion-auto-git/
+external/
+unwanted/
 cache/
 vector_db/
 checkpoints/
@@ -68,6 +71,7 @@ data/vector_db/
 state_*.json
 pipeline_state.json
 pipeline_monitor_report.json
+reviews.db
 
 # Temporary files
 tmp*.py
@@ -77,6 +81,8 @@ tmp*.py
 *.swo
 *~
 nul
+temp_probe.txt
+test_output.txt
 
 # Notebook artifacts
 .ipynb_checkpoints/
@@ -84,6 +90,8 @@ nul
 # Editor and OS
 .vscode/
 .idea/
+.agents/
+.playwright-mcp/
 .DS_Store
 Thumbs.db
 Desktop.ini
@@ -106,6 +114,7 @@ Desktop.ini
 *.avi
 *.webm
 *.wav
+website-*.png
 
 # Keep lockfiles and source docs by default; ignore only generated docs if needed
 # docs/generated/
