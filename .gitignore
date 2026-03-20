@@ -1,0 +1,111 @@
+# ============================================
+# AUTO-GIT - Root Ignore Policy
+# ============================================
+
+# Secrets and local credentials
+.env
+.env.*
+*.key
+*.pem
+*.p12
+*.crt
+secrets/
+credentials/
+
+# Python bytecode and build artifacts
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+dist/
+.eggs/
+*.egg-info/
+*.egg
+pip-wheel-metadata/
+
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+
+# Test and lint caches
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.tox/
+.nox/
+.hypothesis/
+.pyre/
+
+# Coverage and reports
+.coverage
+.coverage.*
+htmlcov/
+coverage/
+
+# Logs and runtime outputs
+logs/
+*.log
+*.out
+*.err
+*.pid
+
+# Generated data and local runtime state
+generated_repos/
+output/
+temp_repos/
+cache/
+vector_db/
+checkpoints/
+data/checkpoints/
+data/memory/
+data/metrics/
+data/test_memory/
+data/vector_db/
+state_*.json
+pipeline_state.json
+pipeline_monitor_report.json
+
+# Temporary files
+tmp*.py
+*.tmp
+*.bak
+*.swp
+*.swo
+*~
+nul
+
+# Notebook artifacts
+.ipynb_checkpoints/
+
+# Editor and OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# Node / frontend artifacts (including nested projects like remotion)
+**/node_modules/
+**/.next/
+**/dist/
+**/build/
+**/out/
+**/.cache/
+**/coverage/
+**/npm-debug.log*
+**/yarn-error.log*
+**/pnpm-debug.log*
+
+# Media and generated binaries
+*.mp4
+*.mov
+*.avi
+*.webm
+*.wav
+
+# Keep lockfiles and source docs by default; ignore only generated docs if needed
+# docs/generated/

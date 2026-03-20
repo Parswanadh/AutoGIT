@@ -1,0 +1,143 @@
+# ============================================
+# AUTO-GIT PUBLISHER - Requirements
+# ============================================
+
+# ============================================
+# Core Dependencies
+# ============================================
+
+# AI/ML - Groq & Local Models
+groq==0.4.1
+sentence-transformers==2.2.2
+torch>=2.0.0
+transformers>=4.30.0
+numpy>=1.24.0
+
+# LangGraph & LangChain (Production-grade orchestration)
+langgraph>=0.2.0
+langchain>=0.3.0
+langchain-community>=0.3.0
+langchain-ollama>=0.2.0
+
+# Web Search & Research
+duckduckgo-search>=4.0.0
+tavily-python>=0.5.0
+
+# Vector Database
+chromadb==0.4.18
+
+# Research Paper Processing
+arxiv==2.1.0
+pypdf==3.17.0
+pdfminer.six==20221105
+
+# GitHub Integration
+PyGithub==2.1.1
+
+# Database & ORM
+sqlalchemy==2.0.23
+aiosqlite==0.19.0
+
+# Data Validation & Models
+pydantic==2.5.2
+python-dotenv==1.0.0
+
+# HTTP & Async
+aiohttp==3.9.1
+httpx==0.25.2
+
+# Retry Logic & Utilities
+tenacity==8.2.3
+backoff==2.2.1
+
+# CLI & Output Formatting
+rich==13.7.0
+click==8.1.7
+tqdm==4.66.1
+
+# ============================================
+# Code Quality & Validation
+# ============================================
+
+# Type Checking & Linting
+mypy==1.7.1
+ruff==0.6.9
+bandit==1.7.10
+pylint==3.0.3
+black==23.12.0
+isort==5.13.2
+flake8==6.1.0
+
+# Testing
+pytest==7.4.3
+pytest-asyncio==0.21.1
+pytest-cov==4.1.0
+pytest-mock==3.12.0
+
+# ============================================
+# Development Tools
+# ============================================
+
+# Pre-commit Hooks
+pre-commit==3.6.0
+
+# Documentation
+mkdocs==1.5.3
+mkdocs-material==9.5.3
+
+# Interactive Development
+ipython==8.18.1
+jupyter==1.0.0
+notebook==7.0.6
+streamlit==1.39.0
+pandas==2.2.3
+
+# ============================================
+# Optional Dependencies
+# ============================================
+
+# Monitoring & Alerts (Optional)
+# discord-webhook==1.3.0
+# slack-sdk==3.26.1
+
+# Advanced PDF Processing (Optional)
+# pdf2image==1.16.3
+# pytesseract==0.3.10  # For OCR
+
+# Distributed Processing (Future)
+# celery==5.3.4
+# redis==5.0.1
+
+# ============================================
+# LLM PROVIDERS - Dual-Mode System
+# ============================================
+
+# Cloud API SDKs
+zhipuai>=2.0.0          # GLM-4.5 official SDK
+PyJWT>=2.8.0            # JWT token generation for Z.ai API
+# anthropic>=0.18.0      # Claude SDK (Optional)
+
+# Token counting
+tiktoken>=0.5.0         # Token counting for cost tracking
+
+# Interactive prompts
+inquirer>=3.1.0        # For execution mode selection
+
+# ============================================
+# Agent Lightning Integration
+# ============================================
+
+# Microsoft Agent Lightning - Training & Optimization
+agentlightning>=0.3.0   # Agent training with RL & APO
+
+# OpenAI-compatible clients
+openai>=1.0.0          # For OpenRouter, Groq, and local models
+
+# Configuration Management
+pyyaml>=6.0.0          # YAML configuration files
+
+# Optional: Monitoring & Experiment Tracking
+# wandb>=0.15.0        # Weights & Biases for training metrics
+
+# Optional: Local Model Serving
+# vllm>=0.3.0          # High-performance local inference

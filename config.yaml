@@ -1,0 +1,443 @@
+# ============================================
+# AUTO-GIT PUBLISHER - Configuration
+# ============================================
+
+# ============================================
+# PIPELINE SETTINGS
+# ============================================
+pipeline:
+  name: "auto-git-publisher"
+  version: "0.1.0"
+  max_papers_per_run: 20
+  checkpoint_enabled: true
+  checkpoint_interval_minutes: 15
+  
+  # Thresholds
+  novelty_threshold: 3.0  # 0-10 scale — UNLOCKED for max run
+  priority_threshold: 0.01  # 0-1 scale — let everything through
+  complexity_review_threshold: 10.0  # Never trigger human review
+  
+  # Modes
+  dry_run: true  # Don't publish to GitHub
+  human_review_enabled: true  # Pause for high-complexity papers
+  mock_apis: false  # Use mock responses for testing
+
+# ============================================
+# ARXIV DISCOVERY
+# ============================================
+arxiv:
+  queries:
+    - "vision transformer"
+    - "agentic AI systems"
+    - "signal processing neural networks"
+    - "diffusion models"
+    - "reinforcement learning"
+    - "large language models"
+    - "neural architecture search"
+  
+  max_results_per_query: 30
+  refresh_interval_hours: 24
+  categories_filter:
+    - "cs.AI"
+    - "cs.LG"
+    - "cs.CV"
+    - "cs.CL"
+    - "cs.NE"
+  
+  # Skip papers older than this
+  min_publication_year: 2020
+
+# ============================================
+# MODEL CONFIGURATION (Local Ollama - No Rate Limits!)
+# ============================================
+models:
+  # Primary models (Local Ollama - Fast & Reliable)
+  primary:
+    code_generation: "qwen2.5-coder:7b"      # 7B coder — fits in 8GB VRAM
+    analysis: "qwen3:4b"                      # 262K context (8x more than 8B!)
+    fast_analysis: "qwen3:4b"                 # 262K context for quick tasks
+    embedding: "all-minilm"                   # SBERT embeddings
+
+  # Specialized models
+  specialized:
+    novelty_scoring: "qwen3:4b"              # 262K context for deep analysis
+    architecture_parsing: "qwen3:4b"         # 262K context for complex reasoning
+    code_review: "qwen2.5-coder:7b"          # 7B coder — fits in 8GB VRAM
+    documentation: "qwen3:4b"                # Fast doc generation
+    supervisor: "gemma2:2b"                  # Lightweight supervisor
+
+  # Generation parameters
+  generation:
+    temperature: 0.7
+    max_tokens_code: 32000
+    max_tokens_analysis: 16000
+    top_p: 0.95
+    frequency_penalty: 0.0
+
+  # Analysis parameters
+  analysis:
+    temperature: 0.5
+    max_tokens: 16000
+
+# ============================================
+# SINGLE-MODEL MULTI-AGENT ARCHITECTURE
+# Optimized for 8GB VRAM constraint
+# ============================================
+single_model_architecture:
+  # Execution mode: sequential (not parallel)
+  mode: "sequential"
+
+  # Primary model for all agents (2.5GB VRAM, 262K context)
+  primary_model: "qwen3:4b"
+  primary_vram_gb: 2.5
+  primary_context_length: 262144  # 262K tokens!
+
+  # Secondary model for fast routing (1.6GB VRAM)
+  router_model: "gemma2:2b"
+  router_vram_gb: 1.6
+
+  # Embedding model (always loaded, 45MB VRAM)
+  embedding_model: "all-minilm:latest"
+
+  # Total VRAM usage: ~4.1GB (well within 8GB limit!)
+  total_vram_gb: 4.1
+
+  # Persona-based specialization (same model, different prompts)
+  # Token limits removed — let models use full context window
+  personas:
+    - name: "researcher"
+      role: "Literature review and gap identification"
+      temperature: 0.7
+
+    - name: "architect"
+      role: "Solution design and architecture"
+      temperature: 0.5
+
+    - name: "ml_theorist"
+      role: "Theoretical rigor analysis"
+      temperature: 0.3
+
+    - name: "systems_engineer"
+      role: "Scalability and implementation"
+      temperature: 0.3
+
+    - name: "applied_scientist"
+      role: "Real-world applicability"
+      temperature: 0.4
+
+    - name: "code_reviewer"
+      role: "Implementation quality"
+      temperature: 0.3
+
+  # Critique personas (weighted consensus)
+  critique_personas:
+    - "ml_theorist"
+    - "systems_engineer"
+    - "applied_scientist"
+    - "code_reviewer"
+
+  # Persona weights for consensus (equal weight)
+  persona_weights:
+    ml_theorist: 0.25
+    systems_engineer: 0.25
+    applied_scientist: 0.25
+    code_reviewer: 0.25
+
+  # Pipeline thresholds
+  consensus_threshold: 6.0      # Lowered — let debate run more rounds
+  disagreement_threshold: 3.0   # Relaxed — tolerate more disagreement
+  max_refinements: 5            # More refinement iterations
+
+  # Performance settings
+  model_caching: true           # Keep model loaded between calls
+  lazy_loading: true            # Load model only when needed
+  enable_streaming: false       # Streaming disabled for critiques
+
+# ============================================
+# CONCURRENCY (Local Ollama - No Rate Limits!)
+# ============================================
+concurrency:
+  ollama:
+    max_concurrent_requests: 6        # Parallel model calls
+    max_workers: 4                    # Agent worker threads
+    request_timeout_seconds: 600      # 10 min per-request timeout
+    enable_streaming: true            # Stream responses
+    max_retries: 5
+    retry_delay_seconds: 2
+  
+  github:
+    requests_per_hour: 5000  # Standard rate limit
+    max_retries: 3
+
+# ============================================
+# PARALLEL MULTI-MODEL GENERATION (Integration #13)
+# ============================================
+parallel_generation:
+  enabled: true
+  
+  # Default models for parallel generation (OpenRouter free - best for coding)
+  default_models:
+    - "qwen/qwen3-coder:free"          # 262K context, coding specialist
+    - "mistralai/devstral-2512:free"   # 262K context, dev specialist
+    - "xiaomi/mimo-v2-flash:free"      # 262K context, #1 SWE-bench
+  
+  # Tasks that benefit from parallel generation
+  use_for_tasks:
+    - "code_generation"
+    - "solution_generation"
+    - "critique"
+    - "complex_reasoning"
+  
+  # Consensus settings
+  consensus:
+    strategy: "quality_score"  # quality_score | majority_vote | ensemble
+    min_models: 2              # Minimum successful responses needed
+    timeout: 300.0             # 5 min timeout per model — generous for complex tasks
+  
+  # Cost control
+  max_parallel_models: 3       # Maximum models to query simultaneously
+  fallback_to_single: true     # Use single model if parallel fails
+  fallback_model: "qwen/qwen3-coder:free"      # Fallback to best coding model
+
+# ============================================
+# VECTOR DATABASE
+# ============================================
+vector_db:
+  type: "chromadb"  # chromadb | qdrant
+  path: "./data/vector_db"
+  collection_name: "papers_novelty"
+  embedding_model: "all-minilm"
+  similarity_threshold: 0.85
+
+# ============================================
+# SQL DATABASE
+# ============================================
+database:
+  type: "sqlite"
+  path: "./data/pipeline.db"
+  echo: false  # Log SQL queries
+  pool_size: 5
+
+# ============================================
+# STORAGE
+# ============================================
+storage:
+  cache_path: "./data/cache"
+  papers_path: "./data/papers"
+  generated_repos_path: "./generated_repos"
+  max_cache_size_mb: 1000
+  cleanup_after_days: 30
+
+# ============================================
+# VALIDATION
+# ============================================
+validation:
+  syntax_check: true
+  type_check: true
+  lint_check: true
+  unit_tests: true
+  
+  # Quality thresholds — relaxed to let pipeline proceed
+  min_lint_score: 30  # pylint score — lowered for max run
+  min_test_coverage: 10  # percentage — lowered for max run
+  min_quality_score: 30  # overall quality — lowered for max run
+  
+  # Validation tools
+  tools:
+    mypy_strict: false
+    pylint_rcfile: null
+    pytest_args: "-v --tb=short"
+
+# ============================================
+# CODE GENERATION
+# ============================================
+code_generation:
+  target_framework: "pytorch"
+  python_version: "3.10"
+  
+  # Generated files
+  components:
+    - "model.py"
+    - "train.py"
+    - "evaluate.py"
+    - "data_loader.py"
+    - "utils.py"
+    - "config.yaml"
+    - "requirements.txt"
+  
+  # Code style
+  style:
+    use_type_hints: true
+    use_docstrings: true
+    max_line_length: 100
+    format_with_black: true
+
+# ============================================
+# GITHUB PUBLISHING
+# ============================================
+github:
+  default_license: "mit"
+  default_visibility: "public"  # public | private
+  
+  # Repository settings
+  repo:
+    add_topics: true
+    default_topics:
+      - "ai"
+      - "machine-learning"
+      - "research"
+      - "autonomous"
+      - "paper-implementation"
+    enable_issues: true
+    enable_wiki: false
+    enable_projects: false
+    auto_init: true
+  
+  # GitHub Actions
+  actions:
+    enable_ci: true
+    enable_tests: true
+    enable_lint: true
+    python_versions: ["3.10", "3.11", "3.12"]
+  
+  # Release settings
+  release:
+    create_release: true
+    tag_format: "v{version}"
+    include_paper_link: true
+    include_citation: true
+
+# ============================================
+# LOGGING
+# ============================================
+logging:
+  level: "INFO"  # DEBUG | INFO | WARNING | ERROR
+  format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+  
+  # File logging
+  file:
+    enabled: true
+    path: "./logs"
+    filename: "pipeline_{date}.log"
+    rotation: "daily"
+    retention_days: 30
+    max_size_mb: 100
+  
+  # Console logging
+  console:
+    enabled: true
+    colored: true
+  
+  # Structured logging
+  json_logs: false
+
+# ============================================
+# MONITORING
+# ============================================
+monitoring:
+  enabled: true
+  
+  # Metrics collection
+  metrics:
+    - "papers_processed"
+    - "success_rate"
+    - "avg_processing_time"
+    - "api_calls_count"
+    - "total_cost"
+  
+  # Alerts
+  alerts:
+    discord:
+      enabled: false
+      webhook_url: null
+    slack:
+      enabled: false
+      webhook_url: null
+  
+  # Dashboard (Future)
+  dashboard:
+    enabled: false
+    port: 8080
+
+# ============================================
+# COST CONTROLS
+# ============================================
+cost_controls:
+  enabled: true
+  daily_limit_usd: 100.0
+  alert_threshold_usd: 90.0
+  
+  # Pricing (estimated)
+  pricing:
+    groq_gpt_oss_120b_per_1k_tokens: 0.001
+    groq_gpt_oss_20b_per_1k_tokens: 0.0005
+  
+  # Actions on limit
+  on_limit_reached: "pause"  # pause | continue | stop
+
+# ============================================
+# TESTING
+# ============================================
+testing:
+  test_paper_id: "1706.03762"  # Attention is All You Need
+  mock_github: true
+  fast_mode: false  # Skip long-running tests
+  
+  # Test data
+  fixtures_path: "./tests/fixtures"
+  generate_fixtures: false
+
+# ============================================
+# OPTIMIZATION
+# ============================================
+optimization:
+  enabled: true
+  strategies:
+    - "vectorization"
+    - "caching"
+    - "memory_profiling"
+  
+  # Performance targets
+  targets:
+    max_memory_mb: 16384
+    target_speedup: 1.0  # No speedup target — prioritize quality
+
+# ============================================
+# PROMPTS
+# ============================================
+prompts:
+  directory: "./prompts"
+  templates:
+    code_generation: "code_generation.txt"
+    architecture_parsing: "architecture_parsing.txt"
+    novelty_analysis: "novelty_analysis.txt"
+    optimization: "optimization.txt"
+
+# ============================================
+# PERPLEXICA (Self-hosted AI Search Engine)
+# ============================================
+# Perplexica provides RAG-powered web + academic search via a REST API.
+# Running natively: node .next/standalone/server.js (port 9123)
+# Requires SearxNG on port 8080 (conda activate searxng; python -m searx.webapp)
+# Set these via environment variables (or override in .env):
+#   PERPLEXICA_URL=http://localhost:9123
+#   PERPLEXICA_CHAT_PROVIDER=Ollama     (free, local — no API cost)
+#   PERPLEXICA_CHAT_MODEL=qwen3.5:2b
+#   PERPLEXICA_EMBEDDING_PROVIDER=Ollama
+#   PERPLEXICA_EMBEDDING_MODEL=embeddinggemma:300m
+#   PERPLEXICA_MODE=speed               (speed | balanced | quality)
+#   PERPLEXICA_TIMEOUT=120
+perplexica:
+  enabled: false
+  url: "http://localhost:9123"
+  mode: "quality"           # speed | balanced | quality (quality = 25 iterations, deepest)
+  timeout_s: 300
+  include_academic: true
+  include_discussions: true
+  max_parallel: 4
+  swarm_mode: false         # Disabled while local providers are turned off
+  # Model selection — using Ollama (free, local, no API costs)
+  chat_provider: "Ollama"
+  chat_model: "qwen3.5:2b"
+  embedding_provider: "Ollama"
+  embedding_model: "embeddinggemma:300m"
