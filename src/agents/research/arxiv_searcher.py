@@ -12,6 +12,8 @@ except ImportError:
     logging.warning("arxiv package not installed. Run: pip install arxiv")
 
 from .web_searcher import WebSearcher, SearchResult
+from src.utils.rate_limiter import RateLimiter
+from src.utils.retry import with_retry
 
 logger = logging.getLogger(__name__)
 
@@ -53,6 +55,8 @@ class ArxivSearcher(WebSearcher):
         self.sort_by = sort_by
         self.sort_order = sort_order
         self.client = arxiv.Client()
+        # arXiv API terms: max 1 request every 3 seconds
+        self.rate_limiter = RateLimiter(rate=1, per=3.0)
         
         logger.info(
             f"Initialized arXiv searcher: sort_by={sort_by}, "
@@ -102,24 +106,33 @@ class ArxivSearcher(WebSearcher):
         
         try:
             logger.info(f"Searching arXiv: {query} (max={max_results})")
-            
-            search = arxiv.Search(
-                query=query,
-                max_results=max_results,
-                sort_by=sort_criterion,
-                sort_order=sort_order_obj
+
+            await self.rate_limiter.acquire()
+
+            results = self._run_query(
+                query, max_results, sort_criterion, sort_order_obj
             )
-            
-            results = []
-            for paper in self.client.results(search):
-                results.append(self._parse_paper(paper))
-            
+
             logger.info(f"arXiv returned {len(results)} results")
             return results
-            
+
         except Exception as e:
             logger.error(f"arXiv search failed: {e}", exc_info=True)
             return []
+
+    @with_retry(max_attempts=2, min_wait=1.0, operation_name="arxiv_search")
+    def _run_query(self, query, max_results, sort_criterion, sort_order_obj):
+        search = arxiv.Search(
+            query=query,
+            max_results=max_results,
+            sort_by=sort_criterion,
+            sort_order=sort_order_obj
+        )
+
+        results = []
+        for paper in self.client.results(search):
+            results.append(self._parse_paper(paper))
+        return results
     
     def _parse_paper(self, paper: "arxiv.Result") -> SearchResult:
         """Convert arxiv.Result to SearchResult."""

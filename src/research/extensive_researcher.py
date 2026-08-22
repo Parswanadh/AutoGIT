@@ -326,8 +326,9 @@ Keep it concise and actionable."""
         try:
             # Determine search type based on query
             if "paper" in query_obj.query.lower() or "research" in query_obj.query.lower():
-                # Use academic engines
-                results = self.searxng.search(
+                # Use academic engines (sync client -> worker thread)
+                results = await asyncio.to_thread(
+                    self.searxng.search,
                     query=query_obj.query,
                     num_results=self.results_per_query,
                     categories="science",
@@ -335,13 +336,15 @@ Keep it concise and actionable."""
                 )
             elif "code" in query_obj.query.lower() or "implementation" in query_obj.query.lower():
                 # Use code engines
-                results = self.searxng.search_code(
+                results = await asyncio.to_thread(
+                    self.searxng.search_code,
                     query=query_obj.query,
                     num_results=self.results_per_query
                 )
             else:
                 # General search
-                results = self.searxng.search(
+                results = await asyncio.to_thread(
+                    self.searxng.search,
                     query=query_obj.query,
                     num_results=self.results_per_query
                 )

@@ -12,6 +12,8 @@ except ImportError:
     logging.warning("ddgs not installed. Run: pip install ddgs")
 
 from .web_searcher import WebSearcher, SearchResult
+from src.utils.rate_limiter import RateLimiter
+from src.utils.retry import CircuitBreaker
 
 logger = logging.getLogger(__name__)
 
@@ -51,6 +53,12 @@ class DuckDuckGoSearcher(WebSearcher):
         self.region = region
         self.safesearch = safesearch
         self.timeout = timeout
+        self._rate_limiter = RateLimiter(rate=20, per=60.0)
+        self._breaker = CircuitBreaker(
+            service_name="duckduckgo",
+            failure_threshold=5,
+            cooldown_seconds=300,
+        )
         
         logger.info(
             f"Initialized DuckDuckGo searcher: region={region}, "
@@ -80,10 +88,17 @@ class DuckDuckGoSearcher(WebSearcher):
         region = kwargs.get("region", self.region)
         safesearch = kwargs.get("safesearch", self.safesearch)
         time_range = kwargs.get("time_range")
-        
+
+        # Graceful degradation: skip entirely while circuit is open
+        if not self._breaker.allow_request():
+            logger.warning("DuckDuckGo circuit open, returning no results")
+            return []
+
+        await self._rate_limiter.acquire()
+
         try:
             logger.info(f"Searching DuckDuckGo: {query} (max={max_results})")
-            
+
             # DuckDuckGo search is synchronous, but we wrap it for consistency
             with DDGS() as ddgs:
                 results_iter = ddgs.text(
@@ -93,16 +108,18 @@ class DuckDuckGoSearcher(WebSearcher):
                     timelimit=time_range,
                     max_results=max_results
                 )
-                
+
                 results = []
                 for result in results_iter:
                     results.append(self._parse_result(result))
-                
+
                 logger.info(f"DuckDuckGo returned {len(results)} results")
+                self._breaker.record_success()
                 return results
-                
+
         except Exception as e:
             logger.error(f"DuckDuckGo search failed: {e}", exc_info=True)
+            self._breaker.record_failure()
             return []
     
     def _parse_result(self, result: dict) -> SearchResult:

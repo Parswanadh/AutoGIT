@@ -5,6 +5,7 @@ import logging
 from typing import List, Optional, Dict, Any
 from urllib.parse import urlencode
 from .web_searcher import WebSearcher, SearchResult
+from src.utils.rate_limiter import RateLimiter
 
 logger = logging.getLogger(__name__)
 
@@ -75,6 +76,7 @@ class SearXNGSearcher(WebSearcher):
         self.time_range = time_range
         self.safesearch = safesearch
         self.timeout = timeout
+        self._rate_limiter = RateLimiter(rate=10, per=60.0)
         
         logger.info(
             f"Initialized SearXNG searcher: {self.base_url}, "
@@ -130,7 +132,9 @@ class SearXNGSearcher(WebSearcher):
         
         try:
             logger.info(f"Searching SearXNG: {query} (max={max_results})")
-            
+
+            await self._rate_limiter.acquire()
+
             async with aiohttp.ClientSession(headers=headers) as session:
                 async with session.get(
                     url,
@@ -219,12 +223,17 @@ class SearXNGSearcher(WebSearcher):
         return 0
     
     def is_available(self) -> bool:
-        """Check if SearXNG instance is available."""
+        """Check if SearXNG instance serves JSON results."""
         import requests
         try:
-            response = requests.head(self.base_url, timeout=5)
+            # Probe the JSON API, not HEAD / - many instances 403 HEAD /
+            response = requests.get(
+                f"{self.base_url}/search?q=test&format=json",
+                timeout=5,
+                headers={"User-Agent": "AutoGIT/1.0 (research probe)"},
+            )
             return response.status_code == 200
-        except:
+        except Exception:
             return False
     
     @classmethod
@@ -262,14 +271,15 @@ class SearXNGSearcher(WebSearcher):
         async with aiohttp.ClientSession() as session:
             for instance in instances:
                 try:
-                    async with session.head(
-                        instance,
+                    # Probe the JSON API, not HEAD / - many instances 403 HEAD /
+                    async with session.get(
+                        f"{instance.rstrip('/')}/search?q=test&format=json",
                         timeout=aiohttp.ClientTimeout(total=5)
                     ) as response:
                         if response.status == 200:
                             logger.info(f"Found working SearXNG instance: {instance}")
                             return instance
-                except:
+                except Exception:
                     continue
         
         logger.warning("No working SearXNG instance found")
