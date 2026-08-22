@@ -21,6 +21,7 @@ Benefits:
 import asyncio
 import time
 import json
+import os
 from typing import Dict, Any, List, Optional, Tuple
 from dataclasses import dataclass, field, asdict
 from datetime import datetime
@@ -31,6 +32,8 @@ from src.utils.logger import get_logger
 from src.utils.ollama_client import get_ollama_client
 
 logger = get_logger("hierarchical_memory")
+
+MAX_PERSISTED_EPISODES = 2000  # ponytail: hard cap, raise if memory grows unbounded
 
 
 # ============================================
@@ -234,6 +237,7 @@ class HierarchicalMemory:
                 self.patterns[pattern.pattern_id] = pattern
 
         # 3. Procedural Memory: Extract skills (if successful)
+        skills: List[Skill] = []
         if outcome == "success" and quality_score >= 7.0:
             skills = await self._extract_skills(episode)
             for skill in skills:
@@ -260,7 +264,7 @@ class HierarchicalMemory:
         logger.info(
             f"Remembered episode {episode_id}: "
             f"outcome={outcome}, score={quality_score:.1f}, "
-            f"patterns={len(patterns)}, skills={len(skills) if outcome == 'success' else 0}"
+            f"patterns={len(patterns)}, skills={len(skills)}"
         )
 
         return episode_id
@@ -284,6 +288,9 @@ class HierarchicalMemory:
         """
         if not self.episodes:
             return []
+
+        # Backfill embeddings for episodes persisted without one (once)
+        await self._backfill_embeddings()
 
         # Generate query embedding
         query_text = self._problem_to_text(problem)
@@ -376,6 +383,24 @@ class HierarchicalMemory:
             model=self.embedding_model,
             text=text
         )
+
+    async def _backfill_embeddings(self):
+        """Compute missing episode embeddings once via embedder_factory."""
+        missing = [ep for ep in self.episodes.values() if not ep.embedding]
+        if not missing:
+            return
+        try:
+            from src.utils.embeddings.embedder_factory import get_embedder
+        except ImportError:
+            logger.warning(
+                "embedder_factory unavailable; skipping semantic search backfill"
+            )
+            return
+
+        embedder = await get_embedder()
+        for ep in missing:
+            text = self._problem_to_text(ep.problem) + " " + ep.solution[:500]
+            ep.embedding = await embedder.embed(text)
 
     def _problem_to_text(self, problem: Dict[str, Any]) -> str:
         """Convert problem dict to text string."""
@@ -547,33 +572,48 @@ class HierarchicalMemory:
         )
 
     async def _save_memory(self):
-        """Save memory to disk."""
-        # Save episodes
-        episodes_path = self.storage_path / "episodes.jsonl"
-        with open(episodes_path, "w", encoding="utf-8") as f:
-            for episode in self.episodes.values():
-                # Don't save embedding (recompute on load)
-                data = episode.to_dict()
-                data["embedding"] = None
-                f.write(json.dumps(data) + "\n")
+        """Save memory to disk (atomic, off the event loop)."""
+        await asyncio.to_thread(self._write_memory_files)
+
+    def _write_memory_files(self):
+        """Blocking file writes; caller wraps in asyncio.to_thread."""
+        # Cap episodes: keep newest, drop oldest
+        if len(self.episodes) > MAX_PERSISTED_EPISODES:
+            keep = sorted(
+                self.episodes.values(), key=lambda e: e.timestamp
+            )[-MAX_PERSISTED_EPISODES:]
+            self.episodes = {e.episode_id: e for e in keep}
+
+        def atomic_write(path: Path, write_fn) -> None:
+            tmp = path.with_suffix(path.suffix + ".tmp")
+            with open(tmp, "w", encoding="utf-8") as f:
+                write_fn(f)
+            os.replace(tmp, path)
+
+        # Save episodes (embedding persisted for reuse across restarts)
+        atomic_write(
+            self.storage_path / "episodes.jsonl",
+            lambda f: [
+                f.write(json.dumps(episode.to_dict()) + "\n")
+                for episode in self.episodes.values()
+            ],
+        )
 
         # Save patterns
-        patterns_path = self.storage_path / "patterns.json"
-        with open(patterns_path, "w", encoding="utf-8") as f:
-            json.dump(
-                {k: v.to_dict() for k, v in self.patterns.items()},
-                f,
-                indent=2
-            )
+        atomic_write(
+            self.storage_path / "patterns.json",
+            lambda f: json.dump(
+                {k: v.to_dict() for k, v in self.patterns.items()}, f, indent=2
+            ),
+        )
 
         # Save skills
-        skills_path = self.storage_path / "skills.json"
-        with open(skills_path, "w", encoding="utf-8") as f:
-            json.dump(
-                {k: v.to_dict() for k, v in self.skills.items()},
-                f,
-                indent=2
-            )
+        atomic_write(
+            self.storage_path / "skills.json",
+            lambda f: json.dump(
+                {k: v.to_dict() for k, v in self.skills.items()}, f, indent=2
+            ),
+        )
 
         logger.debug("Memory saved to disk")
 
