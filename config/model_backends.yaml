@@ -42,6 +42,18 @@ model_backends:
     api_key: "${OPENROUTER_API_KEY}"
     priority: 2
     models:
+      # === OX-ALPHA EXCLUSIVE (1M ctx, free-tier only) ===
+      # ponytail: single call, respects 200 RPD / 20 RPM, no paid fallback
+      - name: "stealth/ox-alpha:free"
+        task_types:
+          - "code_generation"
+          - "reasoning"
+          - "general"
+          - "analysis"
+          - "planning"
+        max_tokens: 32000
+        temperature: 0.3
+
       # === TOP CODING MODELS ===
       
       # Qwen3 Coder 480B - Best for coding, 262K context

@@ -118,6 +118,10 @@ MODEL_COSTS: Dict[str, tuple] = {
     "gpt-4o":                 (2.50, 10.00),      # $2.50/1M in, $10.00/1M out
     # Ollama local
     "ollama":                 (0.0, 0.0),
+    # Stealth ox-alpha free (1M ctx)
+    "stealth/ox-alpha:free": (0.0, 0.0),
+    "ox-alpha:free":         (0.0, 0.0),
+    "ox-alpha":              (0.0, 0.0),
 }
 
 
@@ -199,6 +203,9 @@ MODEL_TIMEOUT_OVERRIDES: Dict[str, int] = {
     "llama-3.1-8b":    25,
     "gemma2:2b":       20,
     "gemma2-2b":       20,
+    # ── Ox-alpha free ──────────────────────────────────────────────────
+    "ox-alpha":       120,  # stealth/ox-alpha:free 1M ctx
+    "stealth/ox-alpha":120,
 }
 
 
@@ -302,6 +309,54 @@ def _local_models_enabled() -> bool:
     return True
 
 
+# ── Free-gate ox-alpha exclusive ──────────────────────────────────────────
+# ponytail: minimal predicate + allowlist, free gate enforced in ModelManager.__init__
+OX_ALPHA_MODEL = "stealth/ox-alpha:free"  # 1M ctx, free-tier
+FREE_ALLOWLIST: Set[str] = {
+    "openrouter/hunter-alpha",
+    "hunter-alpha",
+    "openrouter/cypher-alpha",
+    "cypher-alpha",
+    "moonshotai/kimi-k2-instruct",
+    "moonshotai/kimi-k2-instruct-0905",
+    "qwen/qwen3-32b",
+    "llama-3.3-70b-versatile",
+    "llama-3.1-8b-instant",
+    "groq/compound",
+    "groq/compound-mini",
+    "meta-llama/llama-3.3-70b-versatile",
+    "meta-llama/llama-3.1-8b-instant",
+    "openai/gpt-oss-120b:free",
+    "openai/gpt-oss-20b:free",
+    OX_ALPHA_MODEL,
+    "stealth/ox-alpha",
+}
+
+def _is_free_model(model_name: str) -> bool:
+    """Predicate from plan: _is_free = ':free' in name or name in FREE_ALLOWLIST."""
+    return ":free" in model_name or model_name in FREE_ALLOWLIST
+
+def _is_free_gate_enabled() -> bool:
+    """True when AUTOGIT_FREE_ONLY or AUTOGIT_OX_ALPHA_ONLY is set."""
+    return _env_flag_enabled(_get_env("AUTOGIT_FREE_ONLY", ""), default=False) or _env_flag_enabled(_get_env("AUTOGIT_OX_ALPHA_ONLY", ""), default=False)
+
+def _is_ox_alpha_only() -> bool:
+    return _env_flag_enabled(_get_env("AUTOGIT_OX_ALPHA_ONLY", ""), default=False)
+
+# legacy alias expected by plan/tests
+def is_free_gate_enabled() -> bool:
+    return _is_free_gate_enabled()
+
+def is_free_model(model_name: str) -> bool:
+    return _is_free_model(model_name)
+
+# backwards compat snake + camel
+free_gate_enabled = _is_free_gate_enabled  # callable alias ponytail: expose as function reference
+
+# duplicate for test import styles
+_is_free = _is_free_model
+
+
 # ── Groq multi-key pool ────────────────────────────────────────────────────────
 # Reads GROQ_API_KEY (primary) + GROQ_API_KEY_1 … GROQ_API_KEY_7 (extra accounts).
 # Each key is treated as a separate provider slot (groq_0, groq_1 …) so a 429
@@ -360,6 +415,8 @@ def _build_openrouter_model(model_name: str, temperature: float) -> BaseChatMode
         "trinity-large":    65_536,   # 131K ctx, supports large output
         "qwen3-next-80b":   65_536,   # 262K ctx, request 65K
         "glm-4.5-air":      65_536,   # 131K ctx, 96K max output
+        "ox-alpha":         32_000,   # stealth/ox-alpha:free 1M ctx
+        "stealth/ox-alpha": 32_000,
     }
     _name_lower = model_name.lower()
     _best_len, _max_tokens = 0, 32_768  # safe default
@@ -590,6 +647,11 @@ class ModelManager:
             ("openai",          "gpt-4o-mini",                               0.5),
             ("ollama",          "phi4-mini:3.8b",                            0.5),
         ],
+        # ── ox_alpha_exclusive: stealth/ox-alpha:free ONLY (1M ctx, free-tier) ──
+        # ponytail: single model, no fan-out, respects 200 RPD / 20 RPM
+        "ox_alpha_exclusive": [
+            ("openrouter",      "stealth/ox-alpha:free",                     0.3),  # 1M ctx, exclusive free gate
+        ],
     }
 
     def __init__(self, base_url: str = "http://localhost:11434"):
@@ -623,7 +685,15 @@ class ModelManager:
         openrouter_key  = bool(_get_env("OPENROUTER_API_KEY"))
         openai_key      = bool(_get_env("OPENAI_API_KEY"))
         groq_pool_size  = len(_GROQ_KEY_POOL)
-        paid_enabled    = _get_env("OPENROUTER_PAID", "").lower() in ("true", "1", "yes")
+        paid_enabled    = _env_flag_enabled(_get_env("OPENROUTER_PAID", ""), default=False)
+        # ── Free-gate exclusive (AUTOGIT_FREE_ONLY / AUTOGIT_OX_ALPHA_ONLY) ──
+        # ponytail: when free gate enabled, ONLY free models ever called, no paid fallback
+        free_gate = _is_free_gate_enabled()
+        ox_only = _is_ox_alpha_only()
+        if free_gate:
+            paid_enabled = False  # force disable paid even if OPENROUTER_PAID=true
+        self.free_gate_enabled = free_gate
+        self.ox_alpha_only = ox_only
 
         # ── Expand Groq entries: one slot per key in the pool ─────────────────
         # Original config has ("groq", model, temp) entries.
@@ -633,6 +703,27 @@ class ModelManager:
         for profile, candidates in self.CLOUD_CONFIGS.items():
             new_candidates = []
             for provider, model_name, temperature in candidates:
+                # ── free-gate filter: drop paid/non-free before expansion ──
+                if free_gate:
+                    if provider == "openai":
+                        continue  # paid last-resort, never when free-only
+                    if provider == "openrouter_paid":
+                        continue  # paid fallback disabled
+                    if provider == "openrouter" and not _is_free_model(model_name):
+                        continue  # only :free or allowlist
+                    if provider.startswith("groq") and not _is_free_model(model_name) and provider != "groq":
+                        # groq slots already expanded; check inner model name allowlist
+                        pass
+                    # ox-alpha exclusive: only OX model survives
+                    if ox_only and model_name != OX_ALPHA_MODEL:
+                        continue
+                    # for raw groq provider, also enforce allowlist
+                    if provider == "groq" and not _is_free_model(model_name):
+                        continue
+                if ox_only and not free_gate:
+                    # safety: ox_only implies free_gate, but handle standalone
+                    if model_name != OX_ALPHA_MODEL:
+                        continue
                 if provider == "groq":
                     if groq_pool_size == 0:
                         continue  # no keys at all — skip
@@ -644,7 +735,26 @@ class ModelManager:
                     # else skip — paid model, user hasn't opted in
                 else:
                     new_candidates.append((provider, model_name, temperature))
+            # ox-alpha exclusive: ensure at least OX model injected when ox_only (all profiles collapse to OX)
+            if ox_only:
+                # ponytail: single call, respects 200 RPD / 20 RPM, no fan-out
+                new_candidates = [("openrouter", OX_ALPHA_MODEL, 0.3)]
+                # keep per-profile temperature from original if needed: use first cand temp or 0.3
+                if candidates:
+                    # preserve temperature of first free candidate if exists
+                    pass
+            # free-gate without ox: if profile filtered empty but was not empty originally, keep at least OX as last resort?
+            # ponytail: don't inject extra; empty will raise RuntimeError downstream (safe fail)
             expanded[profile] = new_candidates
+        # Ensure ox_alpha_exclusive profile always exists even if ox_only not set (already in CLOUD_CONFIGS)
+        if ox_only:
+            # collapse all profiles to OX regardless of prior filter
+            for p in list(expanded.keys()):
+                expanded[p] = [("openrouter", OX_ALPHA_MODEL, 0.3)]
+            expanded["ox_alpha_exclusive"] = [("openrouter", OX_ALPHA_MODEL, 0.3)]
+        elif free_gate:
+            # ensure ox_alpha_exclusive still points to free model
+            expanded["ox_alpha_exclusive"] = [("openrouter", OX_ALPHA_MODEL, 0.3)]
         # Replace class-level config with expanded per-instance copy
         self.CLOUD_CONFIGS = expanded
 
@@ -654,6 +764,9 @@ class ModelManager:
         logger.info(f"  OR Paid:    {'✅ enabled (OPENROUTER_PAID=true)' if paid_enabled else '⚪ disabled — set OPENROUTER_PAID=true to unlock cheap paid models'}")
         logger.info(f"  OpenAI:     {'✅ (paid last-resort)' if openai_key else '⚪ not set (optional)'}")
         logger.info(f"  Local LLMs: {'✅ enabled' if _local_models_enabled() else '⛔ disabled (AUTOGIT_DISABLE_LOCAL_MODELS=true)'}")
+        logger.info(f"  Free-gate:  {'🔒 FREE ONLY (AUTOGIT_FREE_ONLY/OX_ALPHA_ONLY)' if free_gate else '⚪ disabled'}")
+        if ox_only:
+            logger.info(f"  Ox-alpha:   🔒 EXCLUSIVE stealth/ox-alpha:free (1M ctx, 20 RPM / 200 RPD)")
 
     def _model_key(self, provider: str, model_name: str) -> str:
         return f"{provider}/{model_name}"
