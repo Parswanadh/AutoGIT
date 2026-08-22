@@ -441,3 +441,11 @@ perplexica:
   chat_model: "qwen3.5:2b"
   embedding_provider: "Ollama"
   embedding_model: "embeddinggemma:300m"
+
+# ============================================
+# TAVILY QUOTA GUARD (cost guard, 2000/mo free)
+# ============================================
+tavily_quota:
+  monthly_limit: 2000
+  db_path: "./data/cache.db"
+  fallback_engine: "ddgs"   # graceful fallback when exhausted, no new deps
