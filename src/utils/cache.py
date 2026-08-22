@@ -287,7 +287,24 @@ class SQLiteCache(BaseCache):
 
     def _init_db(self):
         """Initialize database table."""
-        with sqlite3.connect(self.db_path) as conn:
+        with sqlite3.connect(self.db_path, timeout=30.0) as conn:
+            # ponytail: WAL for parallel readers/writers; only set if missing
+            try:
+                cur = conn.execute("PRAGMA journal_mode;")
+                row = cur.fetchone()
+                mode = row[0] if row else ""
+                if mode.lower() != "wal":
+                    conn.execute("PRAGMA journal_mode=WAL;")
+            except sqlite3.Error:
+                try:
+                    conn.execute("PRAGMA journal_mode=WAL;")
+                except sqlite3.Error:
+                    pass
+            try:
+                conn.execute("PRAGMA synchronous=NORMAL;")
+                conn.execute("PRAGMA busy_timeout=30000;")
+            except sqlite3.Error:
+                pass
             conn.execute(f"""
                 CREATE TABLE IF NOT EXISTS {self.name} (
                     key TEXT PRIMARY KEY,
@@ -299,10 +316,19 @@ class SQLiteCache(BaseCache):
             """)
             conn.commit()
 
+    def _connect(self):
+        """Parallel-safe connection helper."""
+        conn = sqlite3.connect(self.db_path, timeout=30.0, check_same_thread=False)
+        try:
+            conn.execute("PRAGMA busy_timeout=30000;")
+        except sqlite3.Error:
+            pass
+        return conn
+
     def get(self, key: str) -> Optional[Any]:
         """Get value from cache."""
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            with self._connect() as conn:
                 cursor = conn.execute(
                     f"SELECT value, timestamp, ttl FROM {self.name} WHERE key = ?",
                     (key,)
@@ -343,7 +369,7 @@ class SQLiteCache(BaseCache):
             timestamp = time.time()
             ttl_value = ttl or self.default_ttl
 
-            with sqlite3.connect(self.db_path) as conn:
+            with self._connect() as conn:
                 conn.execute(
                     f"""
                     INSERT OR REPLACE INTO {self.name} (key, value, timestamp, ttl)
@@ -359,7 +385,7 @@ class SQLiteCache(BaseCache):
     def delete(self, key: str) -> bool:
         """Delete entry from cache."""
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            with self._connect() as conn:
                 cursor = conn.execute(
                     f"DELETE FROM {self.name} WHERE key = ?",
                     (key,)
@@ -373,7 +399,7 @@ class SQLiteCache(BaseCache):
     def clear(self):
         """Clear all cache entries."""
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            with self._connect() as conn:
                 conn.execute(f"DELETE FROM {self.name}")
                 conn.commit()
                 self._hits = 0
@@ -384,7 +410,7 @@ class SQLiteCache(BaseCache):
     def get_stats(self) -> dict[str, Any]:
         """Get cache statistics."""
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            with self._connect() as conn:
                 cursor = conn.execute(f"SELECT COUNT(*) FROM {self.name}")
                 count = cursor.fetchone()[0]
 

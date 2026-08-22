@@ -74,34 +74,54 @@ class ResearchCoordinator:
     5. Deduplication - remove duplicate results
     """
     
-    def __init__(self, config: Optional[ResearchConfig] = None):
+    def __init__(self, config: Optional[ResearchConfig] = None, cache: Optional[Any] = None, scraper_cache: Optional[Any] = None):
         """
         Initialize research coordinator.
         
         Args:
             config: Research configuration (uses defaults if None)
+            cache: Optional shared cache (SearchCache or ScraperCache) for reuse
+            scraper_cache: Optional isolated scraper cache (alias for cache)
         """
         self.config = config or ResearchConfig()
-        self.cache = SearchCache(ttl_seconds=self.config.cache_ttl_seconds)
+        # ponytail: allow reuse of shared SQLiteCache WAL via scraper_cache
+        if cache is not None:
+            self.cache = cache
+        elif scraper_cache is not None:
+            self.cache = scraper_cache
+        else:
+            self.cache = SearchCache(ttl_seconds=self.config.cache_ttl_seconds)
+        # opportunistic shared cache handle for persistence (does not break if missing)
+        try:
+            from src.scraper.cache import get_scraper_cache
+            self.scraper_cache = get_scraper_cache() if cache is None and scraper_cache is None else (cache or scraper_cache)
+        except Exception:
+            self.scraper_cache = cache or scraper_cache
         
         # Initialize sources
         self.sources: List[WebSearcher] = []
-        
+
         if self.config.enable_duckduckgo:
-            ddg = DuckDuckGoSearcher(
-                region=self.config.ddg_region,
-                safesearch=self.config.ddg_safesearch
-            )
-            self.sources.append(ddg)
-            logger.info("Enabled DuckDuckGo searcher")
-        
+            try:
+                ddg = DuckDuckGoSearcher(
+                    region=self.config.ddg_region,
+                    safesearch=self.config.ddg_safesearch
+                )
+                self.sources.append(ddg)
+                logger.info("Enabled DuckDuckGo searcher")
+            except Exception as e:
+                logger.warning(f"DuckDuckGo searcher unavailable: {e}")
+
         if self.config.enable_arxiv:
-            arxiv = ArxivSearcher(
-                sort_by=self.config.arxiv_sort_by,
-                sort_order=self.config.arxiv_sort_order
-            )
-            self.sources.append(arxiv)
-            logger.info("Enabled arXiv searcher")
+            try:
+                arxiv = ArxivSearcher(
+                    sort_by=self.config.arxiv_sort_by,
+                    sort_order=self.config.arxiv_sort_order
+                )
+                self.sources.append(arxiv)
+                logger.info("Enabled arXiv searcher")
+            except Exception as e:
+                logger.warning(f"arXiv searcher unavailable: {e}")
         
         # Sort sources by priority (lower = higher priority)
         self.sources.sort(key=lambda s: s.get_priority())
