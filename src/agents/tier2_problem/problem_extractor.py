@@ -1,4 +1,5 @@
 """
+dormant: legacy pipeline removed (src.pipeline purged) - module non-functional
 Problem Statement Extractor Agent
 Extracts structured problem statements from research papers.
 """

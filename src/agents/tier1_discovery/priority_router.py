@@ -1,4 +1,5 @@
 """
+dormant: legacy pipeline removed (src.pipeline purged) - module non-functional
 Agent 3: Priority Router - Complexity estimation + priority scoring.
 LangGraph node implementation.
 """

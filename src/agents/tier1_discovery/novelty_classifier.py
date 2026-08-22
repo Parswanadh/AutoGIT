@@ -1,4 +1,5 @@
 """
+dormant: legacy pipeline removed (src.pipeline purged) - module non-functional
 Agent 2: Novelty Classifier - Semantic similarity + LLM scoring.
 LangGraph node implementation.
 """

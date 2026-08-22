@@ -1,4 +1,5 @@
 """
+dormant: legacy pipeline removed (src.pipeline purged) - module non-functional
 Solution Generator Agent
 Proposes novel solutions to research problems.
 """

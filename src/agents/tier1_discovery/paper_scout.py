@@ -1,4 +1,5 @@
 """
+dormant: legacy pipeline removed (src.pipeline purged) - module non-functional
 Agent 1: Paper Scout - Autonomous arXiv monitoring.
 LangGraph node implementation.
 """

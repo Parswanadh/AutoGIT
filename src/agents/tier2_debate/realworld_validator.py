@@ -1,4 +1,5 @@
 """
+dormant: legacy pipeline removed (src.pipeline purged) - module non-functional
 Real-World Validator Agent
 Validates solution feasibility in real-world scenarios.
 """

@@ -1,4 +1,5 @@
 """
+dormant: legacy pipeline removed (src.pipeline purged) - module non-functional
 Debate Moderator Agent
 Orchestrates multi-round debate between generator and critic.
 """

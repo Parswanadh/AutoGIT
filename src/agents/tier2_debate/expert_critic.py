@@ -1,4 +1,5 @@
 """
+dormant: legacy pipeline removed (src.pipeline purged) - module non-functional
 Expert Critic Agent
 Reviews and critiques solution proposals.
 """
