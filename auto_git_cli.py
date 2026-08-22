@@ -198,6 +198,16 @@ def _apply_cloud_only_mode(cloud_only: bool) -> None:
     os.environ["PERPLEXICA_ENABLED"] = "false"
     console.print("[cyan]☁️  Cloud-only mode enabled (local models + Perplexica disabled for this run).[/cyan]")
 
+
+def _apply_free_only_mode(free_only: bool) -> None:
+    """Apply free-only gate for this process execution."""
+    if not free_only:
+        return
+    # ponytail: env gate — model_manager already skips paid when OPENROUTER_PAID != true
+    os.environ["OPENROUTER_PAID"] = "false"
+    os.environ["AUTOGIT_FREE_ONLY"] = "true"
+    console.print("[cyan]🆓 Free-only mode enabled (paid models disabled for this run).[/cyan]")
+
 # ASCII Art Logo
 LOGO = r"""
    ___         __           _______ ______
@@ -292,6 +302,7 @@ def generate(
     hitl_git_publishing: str = typer.Option("pending", "--hitl-git-publishing", help="HITL decision for git publishing: approve|edit|reject|pending"),
     hitl_interactive: bool = typer.Option(False, "--hitl-interactive", help="Prompt for HITL decisions in constrained/untrusted modes"),
     cloud_only: bool = typer.Option(False, "--cloud-only", help="Disable local models and run with cloud providers only"),
+    free_only: bool = typer.Option(False, "--free-only", help="Use only free-tier models (disable paid fallbacks)"),
 ):
     """
     🚀 Generate code from research idea using LangGraph pipeline
@@ -320,6 +331,7 @@ def generate(
         console.print("[yellow]Pipeline cancelled[/yellow]")
         raise typer.Exit()
 
+    _apply_free_only_mode(free_only)
     _apply_cloud_only_mode(cloud_only)
     
     # Run the pipeline
@@ -643,6 +655,7 @@ def replay(
     hitl_git_publishing: str = typer.Option("pending", "--hitl-git-publishing", help="HITL decision for git publishing: approve|edit|reject|pending"),
     hitl_interactive: bool = typer.Option(False, "--hitl-interactive", help="Prompt for HITL decisions in constrained/untrusted modes"),
     cloud_only: bool = typer.Option(False, "--cloud-only", help="Disable local models and run with cloud providers only"),
+    free_only: bool = typer.Option(False, "--free-only", help="Use only free-tier models (disable paid fallbacks)"),
     force_resume: bool = typer.Option(False, "--force-resume", help="Force resume even when checkpoint diagnostics are not resumable"),
 ):
     """
@@ -723,6 +736,7 @@ def replay(
     if not resume_run:
         return
 
+    _apply_free_only_mode(free_only)
     _apply_cloud_only_mode(cloud_only)
 
     if not diagnostics.get("resumable", False) and not force_resume:
@@ -790,7 +804,10 @@ def config(
 
 
 @app.callback(invoke_without_command=True)
-def main(ctx: typer.Context):
+def main(
+    ctx: typer.Context,
+    free_only: bool = typer.Option(False, "--free-only", help="Use only free-tier models (disable paid fallbacks)"),
+):
     """
     🚀 AUTO-GIT - Autonomous Research-to-GitHub Pipeline
     
@@ -798,6 +815,9 @@ def main(ctx: typer.Context):
     
     Powered by LangGraph, Ollama, and Multi-Agent Debate Systems.
     """
+    # ponytail: free-only passthrough via env gate; covers global `auto-git --free-only <cmd>`
+    if free_only:
+        _apply_free_only_mode(True)
     if ctx.invoked_subcommand is None:
         # No command specified, show menu
         menu()

@@ -4,7 +4,6 @@ Execution sandbox for safely running generated code.
 Runs code in an isolated subprocess with timeout to catch runtime errors.
 """
 
-import os
 import subprocess
 import tempfile
 import time
@@ -12,6 +11,7 @@ from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
 from ..validation.error_types import ExecutionResult, ValidationResult, CodeError, ErrorType
+from src.utils.safe_env import get_safe_env
 
 
 class ExecutionSandbox:
@@ -58,14 +58,14 @@ class ExecutionSandbox:
                 test_file = tmpdir / "test_execution.py"
                 test_file.write_text(test_script, encoding='utf-8')
 
-                # Run the test
+                # Run the test — allowlist prevents secret/OOM leak
                 result = subprocess.run(
                     ["python", str(test_file)],
                     capture_output=True,
                     text=True,
                     timeout=self.timeout,
                     cwd=str(tmpdir),
-                    env={**os.environ, "PYTHONPATH": str(tmpdir)}
+                    env=get_safe_env(extra={"PYTHONPATH": str(tmpdir)}),
                 )
 
                 duration = time.time() - start_time

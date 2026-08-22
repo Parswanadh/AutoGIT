@@ -24,6 +24,18 @@ if sys.platform == "win32" and hasattr(sys.stdout, "reconfigure"):
 
 import re as _re
 
+try:
+    from src.utils.safe_env import get_safe_env as _safe_env
+except ImportError:
+    try:
+        from utils.safe_env import get_safe_env as _safe_env  # type: ignore
+    except ImportError:
+        def _safe_env(extra=None):  # minimal fallback
+            _env = {"PYTHONIOENCODING": "utf-8", "PYTHONDONTWRITEBYTECODE": "1", "PIP_NO_INPUT": "1", "PIP_DISABLE_PIP_VERSION_CHECK": "1"}
+            if extra:
+                _env.update(extra)
+            return _env
+
 from langchain_ollama import ChatOllama
 from langchain_core.messages import SystemMessage, HumanMessage
 from rich.console import Console
@@ -5295,14 +5307,14 @@ Return ONLY valid Python code. No markdown fences."""
                                         with open(_tvfp, "w", encoding="utf-8", errors="replace") as _tvff:
                                             _tvff.write(_tvfc)
 
-                                # Quick import-check only (not full pytest) — 10s timeout
+                                # Quick import-check only (not full pytest) — 10s timeout — allowlist prevents secret/OOM leak
                                 _tv_check = _subp_tv.run(
                                     [sys.executable, "-c",
                                      f"import sys; sys.path.insert(0, r'{_tv_dir}'); "
                                      f"exec(open(r'{os.path.join(_tv_dir, 'test_main.py')}').read())"],
                                     capture_output=True, text=True, timeout=10,
                                     cwd=_tv_dir,
-                                    env={**os.environ, "PYTHONDONTWRITEBYTECODE": "1"}
+                                    env=_safe_env(),
                                 )
                                 if _tv_check.returncode != 0:
                                     _tv_err = (_tv_check.stderr or _tv_check.stdout or "")[:300]
@@ -10492,27 +10504,15 @@ async def _post_save_smoke_test(project_dir) -> Dict[str, Any]:
                 subprocess.run(
                     [sys.executable, "-m", "venv", str(_smoke_venv)],
                     check=True, capture_output=True, timeout=60,
+                    env=_safe_env(),
                 )
                 console.print("  ✅ Created fallback smoke test venv")
             except Exception as e:
                 console.print(f"  ⚠️  Venv creation failed: {e} — using host Python (fallback)")
                 _smoke_python = Path(sys.executable)
 
-    # Build a sanitized env (no API keys leak) — V10 FIX: comprehensive pattern matching
-    _SENSITIVE_NAMES = {"GROQ_API_KEY", "OPENAI_API_KEY", "ANTHROPIC_API_KEY",
-                        "GITHUB_TOKEN", "GH_TOKEN", "OPENAI_ORG", "AWS_ACCESS_KEY_ID",
-                        "AWS_SECRET_ACCESS_KEY", "AZURE_OPENAI_KEY", "HF_TOKEN",
-                        "HUGGINGFACE_TOKEN", "COHERE_API_KEY", "TOGETHER_API_KEY"}
-    _SENSITIVE_PATS = ("API_KEY", "SECRET", "_TOKEN", "PASSWORD", "CREDENTIAL", "_KEY")
-    _smoke_env = {}
-    for k, v in __import__('os').environ.items():
-        if k in _SENSITIVE_NAMES:
-            continue
-        k_upper = k.upper()
-        if any(pat in k_upper for pat in _SENSITIVE_PATS):
-            continue
-        _smoke_env[k] = v
-    _smoke_env["PYTHONIOENCODING"] = "utf-8"
+    # Allowlist env — prevents secret/OOM leak (replaces blocklist)
+    _smoke_env = _safe_env()
 
     # Dependency install is already handled through the shared CodeExecutor cache path above.
     if not req_path.exists():

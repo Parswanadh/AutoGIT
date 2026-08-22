@@ -15,6 +15,8 @@ from typing import Dict, List, Optional, Tuple
 import tempfile
 import shutil
 
+from .safe_env import get_safe_env
+
 logger = logging.getLogger(__name__)
 
 
@@ -39,54 +41,13 @@ def build_cached_venv_dir(cache_root: Path, requirements_text: str) -> Path:
 
 
 def _safe_subprocess_env() -> Dict[str, str]:
-    """Build a subprocess environment that forces UTF-8 encoding on Windows.
-    
-    Prevents UnicodeEncodeError when generated code prints emoji/unicode
-    symbols (✅, ❌, ⚠️, etc.) to stdout on a cp1252 terminal.
-    
-    SECURITY: Strips API keys and sensitive tokens so generated code
-    cannot accidentally read them from os.environ.
-    """
-    # Sensitive env var patterns to strip
-    _SENSITIVE_KEYS = {
-        "GROQ_API_KEY", "OPENAI_API_KEY", "ANTHROPIC_API_KEY",
-        "GITHUB_TOKEN", "GH_TOKEN", "GITHUB_PAT",
-        "AWS_SECRET_ACCESS_KEY", "AWS_SESSION_TOKEN",
-        "AZURE_API_KEY", "HF_TOKEN", "HUGGINGFACE_TOKEN",
-        "OPENROUTER_API_KEY", "TOGETHER_API_KEY",
-        "COHERE_API_KEY", "MISTRAL_API_KEY",
-    }
-    env = {}
-    for k, v in os.environ.items():
-        # Skip known sensitive keys
-        if k.upper() in _SENSITIVE_KEYS:
-            continue
-        # Skip any key containing API_KEY, SECRET, TOKEN (broad safety net)
-        k_upper = k.upper()
-        if any(pat in k_upper for pat in ("API_KEY", "SECRET", "_TOKEN", "PASSWORD", "CREDENTIAL")):
-            continue
-        env[k] = v
-    env["PYTHONIOENCODING"] = "utf-8"
-    env["PYTHONDONTWRITEBYTECODE"] = "1"
-    # Ensure pip doesn't hang asking for input
-    env["PIP_NO_INPUT"] = "1"
-    env["PIP_DISABLE_PIP_VERSION_CHECK"] = "1"
-    return env
+    """Allowlist-based safe env (delegates to src/utils/safe_env.py)."""
+    return get_safe_env()
 
 
 def _encoding_test_env() -> Dict[str, str]:
-    """Build a subprocess environment that mimics real Windows cp1252.
-    
-    Does NOT set PYTHONIOENCODING, so emoji/unicode printing will crash
-    on Windows just like it would on a real user's machine.  Used as a
-    secondary test to catch encoding issues that _safe_subprocess_env masks.
-    
-    SECURITY: Still strips API keys (same as _safe_subprocess_env).
-    """
-    env = _safe_subprocess_env()  # Start from sanitized base
-    env["PYTHONDONTWRITEBYTECODE"] = "1"
-    env["PIP_NO_INPUT"] = "1"
-    # Explicitly unset PYTHONIOENCODING so the default cp1252 is used
+    """Safe env without PYTHONIOENCODING to mimic Windows cp1252."""
+    env = get_safe_env()
     env.pop("PYTHONIOENCODING", None)
     return env
 

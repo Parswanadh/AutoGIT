@@ -13,6 +13,18 @@ from pathlib import Path
 from typing import Dict, Any, List, Optional
 from dataclasses import dataclass, field
 
+try:
+    from src.utils.safe_env import get_safe_env
+except ImportError:
+    try:
+        from utils.safe_env import get_safe_env  # type: ignore
+    except ImportError:
+        def get_safe_env(extra=None):  # fallback
+            env = {"PYTHONIOENCODING": "utf-8", "PYTHONDONTWRITEBYTECODE": "1"}
+            if extra:
+                env.update(extra)
+            return env
+
 logger = logging.getLogger(__name__)
 
 
@@ -137,7 +149,7 @@ class TestExecutor:
         start_time = time.time()
         
         try:
-            # Run pytest with JSON report
+            # Run pytest with allowlist env — prevents secret/OOM leak to generated code
             result = subprocess.run(
                 [
                     sys.executable, "-m", "pytest",
@@ -150,7 +162,8 @@ class TestExecutor:
                 cwd=working_dir,
                 capture_output=True,
                 text=True,
-                timeout=self.timeout
+                timeout=self.timeout,
+                env=get_safe_env(),
             )
             
             execution_time = time.time() - start_time

@@ -25,6 +25,8 @@ import tempfile
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
+from .safe_env import get_safe_env
+
 logger = logging.getLogger(__name__)
 
 
@@ -428,18 +430,7 @@ class FeatureVerifier:
             }
 
         try:
-            # --- V1 FIX: Strip API keys from env (same as code_executor) ---
-            _fv_env = {}
-            _SENSITIVE = {"GROQ_API_KEY", "OPENAI_API_KEY", "ANTHROPIC_API_KEY",
-                          "GITHUB_TOKEN", "GH_TOKEN", "OPENAI_ORG", "AWS_ACCESS_KEY_ID",
-                          "AWS_SECRET_ACCESS_KEY"}
-            _SENS_PATS = ("API_KEY", "SECRET", "_TOKEN", "PASSWORD", "CREDENTIAL", "_KEY")
-            for k, v in __import__('os').environ.items():
-                if k in _SENSITIVE or any(p in k.upper() for p in _SENS_PATS):
-                    continue
-                _fv_env[k] = v
-            _fv_env["PYTHONDONTWRITEBYTECODE"] = "1"
-            _fv_env["PYTHONIOENCODING"] = "utf-8"
+            _fv_env = get_safe_env()
             result = subprocess.run(
                 [str(python_exe), "feature_tests.py"],
                 capture_output=True,

@@ -35,6 +35,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
+from .safe_env import get_safe_env
+
 logger = logging.getLogger("docker_executor")
 
 # Default Docker image for Python code execution
@@ -320,10 +322,9 @@ class DockerSandboxExecutor:
         
         result = SandboxResult(used_docker=False)
         
-        # Build safe environment
-        env = self._safe_env()
-        if env_vars:
-            env.update(env_vars)
+        # Build safe environment — allowlist prevents secret/OOM leak
+        env = get_safe_env(extra=env_vars) if env_vars else get_safe_env()
+        # Backwards compat: keep _safe_env working via get_safe_env
         
         # Install deps first if needed
         if install_deps:
@@ -373,17 +374,8 @@ class DockerSandboxExecutor:
     
     @staticmethod
     def _safe_env() -> Dict[str, str]:
-        """Build a subprocess environment with security stripping."""
-        _SENSITIVE_PATTERNS = ("API_KEY", "SECRET", "_TOKEN", "PASSWORD", "CREDENTIAL")
-        env = {}
-        for k, v in os.environ.items():
-            if any(pat in k.upper() for pat in _SENSITIVE_PATTERNS):
-                continue
-            env[k] = v
-        env["PYTHONIOENCODING"] = "utf-8"
-        env["PYTHONDONTWRITEBYTECODE"] = "1"
-        env["PIP_NO_INPUT"] = "1"
-        return env
+        """Allowlist-based safe env (delegates to src/utils/safe_env.py)."""
+        return get_safe_env()
     
     def run_all_tests(
         self,
