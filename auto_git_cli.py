@@ -803,6 +803,24 @@ def config(
         console.print("[yellow]No configuration changes made. Use --help for options.[/yellow]")
 
 
+@app.command()
+def monitor(
+    duration: float = typer.Option(5.0, "--duration", "-d", help="Live monitor duration seconds"),
+):
+    """📺 Live pipeline monitor — polls tracer + resources at 2Hz."""
+    show_banner()
+    console.print("[cyan]📺 Starting live monitor (2Hz)...[/cyan]\n")
+    try:
+        from src.tui.monitor import run as _run_monitor
+
+        _run_monitor(duration=duration)
+    except KeyboardInterrupt:
+        console.print("\n[yellow]Monitor stopped[/yellow]")
+    except Exception as e:
+        console.print(f"[red]Monitor failed: {e}[/red]")
+        raise typer.Exit(1)
+
+
 @app.callback(invoke_without_command=True)
 def main(
     ctx: typer.Context,
