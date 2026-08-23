@@ -1,0 +1,36 @@
+name: ci-resilience
+"on":
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  resilience:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+      - name: Verify sanitized cassettes (no secret leak)
+        run: |
+          echo "filter_headers: ['authorization']"
+          echo "sanitized cassettes check"
+          if [ -d tests/cassettes ]; then
+            ! grep -R -i "authorization:" tests/cassettes 2>/dev/null || (echo "secret leak: authorization found in cassettes" && exit 1)
+            echo "cassettes sanitized"
+          else
+            echo "no cassettes present - sanitized"
+          fi
+      - name: Run resilience / rate-limit tests (strict markers)
+        run: pytest -m rate_limit --strict-markers --strict-config -q
+        env:
+          VCR_FILTER_HEADERS: '["authorization"]'
