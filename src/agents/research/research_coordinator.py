@@ -8,6 +8,7 @@ from difflib import SequenceMatcher
 from .web_searcher import WebSearcher, SearchResult, SearchCache
 from .duckduckgo_searcher import DuckDuckGoSearcher
 from .arxiv_searcher import ArxivSearcher
+from src.scraper.canonical import canonicalize_url  # ponytail: stdlib dedupe
 
 logger = logging.getLogger(__name__)
 
@@ -354,7 +355,7 @@ class ResearchCoordinator:
     
     def _deduplicate_results(self, results: List[SearchResult]) -> List[SearchResult]:
         """
-        Remove duplicate results based on URL and title similarity.
+        Remove duplicate results based on URL (canonical) and title similarity.
         
         Args:
             results: List of search results
@@ -365,21 +366,25 @@ class ResearchCoordinator:
         seen_urls = set()
         seen_titles = set()
         unique = []
-        
+
         for result in results:
-            # Check URL
-            if result.url in seen_urls:
+            # ponytail: canonical URL exact match
+            try:
+                canon = canonicalize_url(result.url)
+            except Exception:
+                canon = result.url
+            if canon in seen_urls:
                 continue
-            
-            # Check title similarity (fuzzy matching)
+
+            # Check title similarity (fuzzy matching >0.9)
             title_norm = result.title.lower().strip()
             if any(self._is_similar(title_norm, seen) for seen in seen_titles):
                 continue
-            
-            seen_urls.add(result.url)
+
+            seen_urls.add(canon)
             seen_titles.add(title_norm)
             unique.append(result)
-        
+
         return unique
     
     def _is_similar(self, s1: str, s2: str, threshold: float = 0.9) -> bool:

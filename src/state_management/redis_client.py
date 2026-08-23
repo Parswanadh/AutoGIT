@@ -320,6 +320,22 @@ class RedisClient:
             raise RuntimeError("Redis client not connected")
         
         return await self.client.scan(cursor, match=match, count=count)
+
+    def scan_iter(self, match: Optional[str] = None, count: int = 10):
+        """Non-blocking iteration over keys (ponytail: SCAN not KEYS)."""
+        if not self.client:
+            raise RuntimeError("Redis client not connected")
+        return self.client.scan_iter(match=match, count=count)
+
+    async def mget(self, *keys: str) -> list:
+        """Batch get (ponytail: one round-trip not N)."""
+        if not self.client:
+            raise RuntimeError("Redis client not connected")
+        if len(keys) == 1 and isinstance(keys[0], (list, tuple)):
+            keys = tuple(keys[0])
+        if not keys:
+            return []
+        return await self.client.mget(keys)
     
     # Utility
     async def flushdb(self) -> bool:

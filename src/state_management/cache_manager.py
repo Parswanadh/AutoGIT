@@ -158,29 +158,34 @@ class SemanticCache:
         # Generate embedding
         query_embedding = self._generate_embedding(full_query)
         
-        # Search for similar cached queries
-        # Get all cache keys
-        cache_keys = await self.redis_client.keys("semantic_cache:*:data")
-        
+        # Search for similar cached queries — SCAN not KEYS (ponytail)
+        import inspect
+        cache_keys = []
+        _iter = self.redis_client.scan_iter(match="semantic_cache:*:data", count=100)
+        if inspect.isawaitable(_iter):
+            _iter = await _iter
+        if hasattr(_iter, "__aiter__"):
+            async for key in _iter:
+                cache_keys.append(key)
+        else:
+            for key in _iter:
+                cache_keys.append(key)
+
         best_match: Optional[Tuple[str, float]] = None
         best_similarity = 0.0
-        
-        for key in cache_keys:
-            # Get embedding for cached query
-            embedding_key = key.replace(":data", ":embedding")
-            cached_embedding_json = await self.redis_client.get(embedding_key)
-            
-            if not cached_embedding_json:
-                continue
-            
-            cached_embedding = json.loads(cached_embedding_json)
-            
-            # Compute similarity
-            similarity = self._compute_similarity(query_embedding, cached_embedding)
-            
-            if similarity > best_similarity:
-                best_similarity = similarity
-                best_match = (key, similarity)
+
+        if cache_keys:
+            embedding_keys = [k.replace(":data", ":embedding") for k in cache_keys]
+            # ponytail: batch mget, one round-trip not N
+            cached_embeddings = await self.redis_client.mget(embedding_keys)
+            for key, cached_embedding_json in zip(cache_keys, cached_embeddings):
+                if not cached_embedding_json:
+                    continue
+                cached_embedding = json.loads(cached_embedding_json)
+                similarity = self._compute_similarity(query_embedding, cached_embedding)
+                if similarity > best_similarity:
+                    best_similarity = similarity
+                    best_match = (key, similarity)
         
         # Check if best match exceeds threshold
         if best_match and best_similarity >= self.similarity_threshold:
