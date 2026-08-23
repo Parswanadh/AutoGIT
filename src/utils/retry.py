@@ -31,6 +31,7 @@ from src.utils.error_types import (
     RateLimitError,
     PersonaGenerationError,
     ParsingError,
+    CircuitBreakerOpen,
 )
 from src.utils.logger import get_logger
 
