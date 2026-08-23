@@ -65,6 +65,27 @@ def workflow_fingerprint(state: Dict[str, Any], node: str, stage: str) -> str:
     return hashlib.sha256(blob.encode("utf-8", errors="replace")).hexdigest()[:16]
 
 
+def is_oscillating(fingerprints: List[str], window: int = 5, threshold: int = 2) -> bool:
+    """Detect oscillation: fingerprint repeats >=threshold within window or A-B-A pattern."""
+    if not fingerprints or len(fingerprints) < threshold:
+        return False
+    recent = [str(f) for f in fingerprints if f][-window:]
+    if len(recent) < threshold:
+        return False
+    # ponytail: Counter O(n), minimal — detect duplicates
+    from collections import Counter
+
+    counts = Counter(recent)
+    if any(v >= threshold for v in counts.values()):
+        return True
+    # A-B-A alternating pattern
+    if len(recent) >= 3 and recent[0] == recent[2] and recent[0] != recent[1]:
+        return True
+    if len(recent) >= 4 and recent[0] == recent[2] and recent[1] == recent[3]:
+        return True
+    return False
+
+
 # aliases for flexibility
 normalize = normalize_error
 fingerprint = fingerprint_error
