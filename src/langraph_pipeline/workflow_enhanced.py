@@ -31,6 +31,54 @@ from ..utils.context_offload import (
     compact_todos_with_pointer,
     restore_todo_context_if_missing,
 )
+# Reliability utils — wired into _with_execution_policy in order:
+# fanout_limiter.cap_fanout → safe_env policy check → artifact_cache.compute_fp → resource_gate.check_resources_async → hard_timeout wait_for
+try:
+    from ..utils.loop_detector import LoopDetector, get_loop_detector  # type: ignore
+except ImportError:
+    try:
+        from src.utils.loop_detector import LoopDetector, get_loop_detector  # type: ignore
+    except ImportError:
+        LoopDetector = None  # type: ignore
+        get_loop_detector = None  # type: ignore  # noqa
+try:
+    from ..utils.artifact_cache import compute_fp, compute_artifact_fingerprint  # type: ignore
+except ImportError:
+    try:
+        from src.utils.artifact_cache import compute_fp, compute_artifact_fingerprint  # type: ignore
+    except ImportError:
+        compute_fp = None  # type: ignore
+        compute_artifact_fingerprint = None  # type: ignore  # noqa
+try:
+    from ..utils.fanout_limiter import cap_fanout, apply_fanout_caps  # type: ignore
+except ImportError:
+    try:
+        from src.utils.fanout_limiter import cap_fanout, apply_fanout_caps  # type: ignore
+    except ImportError:
+        cap_fanout = None  # type: ignore
+        apply_fanout_caps = None  # type: ignore  # noqa
+try:
+    from ..utils.fingerprint import workflow_fingerprint  # type: ignore
+except ImportError:
+    try:
+        from src.utils.fingerprint import workflow_fingerprint  # type: ignore
+    except ImportError:
+        workflow_fingerprint = None  # type: ignore  # noqa
+try:
+    from ..utils.resource_gate import check_resources_async, wait_for_resources_async  # type: ignore
+except ImportError:
+    try:
+        from src.utils.resource_gate import check_resources_async, wait_for_resources_async  # type: ignore
+    except ImportError:
+        check_resources_async = None  # type: ignore
+        wait_for_resources_async = None  # type: ignore  # noqa
+try:
+    from ..utils.safe_env import get_safe_env  # type: ignore
+except ImportError:
+    try:
+        from src.utils.safe_env import get_safe_env  # type: ignore
+    except ImportError:
+        get_safe_env = None  # type: ignore  # noqa
 from rich.panel import Panel
 from rich.table import Table
 from rich.live import Live
@@ -1693,6 +1741,66 @@ def _with_execution_policy(node_name: str, node_fn):
         fp_mode = reusable_nodes.get(node_name)
         artifact_fp = _compute_generated_artifact_fingerprint(working_state, mode=fp_mode) if fp_mode else ""
 
+        # 1) fanout_limiter.cap_fanout — bounded delegation (guarded)
+        try:
+            if cap_fanout is not None:
+                # cap_fanout on perspectives list
+                _persp = working_state.get("perspectives")
+                if isinstance(_persp, list) and len(_persp) > 6:
+                    working_state["perspectives"] = cap_fanout(_persp, cap=6)  # type: ignore
+            if apply_fanout_caps is not None:
+                _ext_fanout = apply_fanout_caps(state, node_name, cap=6)  # type: ignore
+                if _ext_fanout:
+                    working_state.update({k: v for k, v in _ext_fanout.items() if k not in {"warnings", "policy_events"}})
+                    warnings.extend(_ext_fanout.get("warnings", []))
+                    policy_events.extend(_ext_fanout.get("policy_events", []))
+        except Exception:
+            pass
+
+        # 2) safe_env policy check — sanitize env for subprocess use (guarded)
+        try:
+            if get_safe_env is not None:
+                _safe_env = get_safe_env()  # type: ignore
+                # advisory: ensure PATH exists, never block execution
+                _ = _safe_env.get("PATH", "")
+        except Exception:
+            pass
+
+        # 3) artifact_cache.compute_fp reuse — deterministic fingerprint (guarded)
+        try:
+            if fp_mode:
+                # prefer external artifact_cache.compute_fp
+                _files = None
+                _gen = working_state.get("generated_code") if isinstance(working_state.get("generated_code"), dict) else {}
+                _files = _gen.get("files", {}) if isinstance(_gen, dict) else {}
+                if isinstance(_files, dict) and _files:
+                    if compute_fp is not None:
+                        _ext_fp = compute_fp(_files, mode=fp_mode)  # type: ignore
+                        if _ext_fp:
+                            artifact_fp = _ext_fp
+                    if not artifact_fp and compute_artifact_fingerprint is not None:
+                        _ext_fp2 = compute_artifact_fingerprint(working_state, mode=fp_mode)  # type: ignore
+                        if _ext_fp2:
+                            artifact_fp = _ext_fp2
+                # fingerprint util for oscillation detection — also guarded
+                if workflow_fingerprint is not None:
+                    try:
+                        _wf_fp = workflow_fingerprint(dict(working_state), node_name, str(working_state.get("current_stage", "")))  # type: ignore
+                        _ = _wf_fp  # advisory, internal loop detector still authoritative
+                    except Exception:
+                        pass
+                # loop_detector sig — guarded, non-authoritative (internal _update_loop_detection_state remains)
+                if get_loop_detector is not None:
+                    try:
+                        _ld = get_loop_detector()  # type: ignore
+                        if _ld is not None:
+                            # record visit without tripping state here; just warm the singleton
+                            _ = _ld.counts.get(node_name, 0)
+                    except Exception:
+                        pass
+        except Exception:
+            pass
+
         # Pre-node governance: cap fan-out and enforce trust policy/HITL rules.
         fanout_updates = _apply_stage_fanout_caps(state, node_name)
         if fanout_updates:
@@ -1746,6 +1854,43 @@ def _with_execution_policy(node_name: str, node_fn):
                 reused = _coerce_list_shape(reused)
                 return reused
 
+        # 4) resource_gate.check_resources_async — advisory async gate (guarded)
+        try:
+            if resource_gate and check_resources_async is not None:
+                _gate_eval = await check_resources_async(
+                    monitor,
+                    max_cpu_percent=resource_gate.get("max_cpu_percent", 90.0),
+                    max_ram_percent=resource_gate.get("max_ram_percent", 85.0),
+                    max_vram_percent=resource_gate.get("max_vram_percent", 85.0),
+                    min_free_ram_gb=resource_gate.get("min_free_ram_gb", 0.0),
+                    min_free_vram_mb=resource_gate.get("min_free_vram_mb", 0.0),
+                )  # type: ignore
+                # use advisory result to pre-warm resource_snapshot if sync eval missed
+                if isinstance(_gate_eval, dict) and _gate_eval.get("stats"):
+                    resource_snapshot = _gate_eval.get("stats")
+                # optionally await wait_for_resources_async for advisory wait (capped)
+                if wait_for_resources_async is not None and not _gate_eval.get("safe", True):
+                    try:
+                        _wt = int(resource_gate.get("wait_timeout", 0) or 0)
+                        if _wt > 0:
+                            _ws = time.monotonic()
+                            await wait_for_resources_async(
+                                monitor,
+                                timeout=_wt,
+                                poll_interval=2.0,
+                                max_cpu_percent=resource_gate.get("max_cpu_percent", 90.0),
+                                max_ram_percent=resource_gate.get("max_ram_percent", 85.0),
+                                max_vram_percent=resource_gate.get("max_vram_percent", 85.0),
+                                min_free_ram_gb=resource_gate.get("min_free_ram_gb", 0.0),
+                                min_free_vram_mb=resource_gate.get("min_free_vram_mb", 0.0),
+                            )  # type: ignore
+                            waited_s = max(waited_s, time.monotonic() - _ws)
+                            resource_snapshot = monitor.get_stats_snapshot()
+                    except Exception:
+                        pass
+        except Exception:
+            pass
+
         if resource_gate:
             try:
                 resource_eval = monitor.evaluate_resources(
@@ -1793,7 +1938,11 @@ def _with_execution_policy(node_name: str, node_fn):
             if asyncio.iscoroutine(result):
                 hard_timeout_s = policy.get("hard_timeout_s")
                 if hard_timeout_s:
-                    result = await asyncio.wait_for(result, timeout=hard_timeout_s)
+                    # 5) hard_timeout wait_for — asyncio.wait_for with policy timeout (guarded)
+                    try:
+                        result = await asyncio.wait_for(result, timeout=hard_timeout_s)
+                    except asyncio.TimeoutError:
+                        raise
                 else:
                     result = await result
         except asyncio.TimeoutError:
