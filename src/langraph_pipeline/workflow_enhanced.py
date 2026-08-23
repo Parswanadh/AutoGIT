@@ -2023,6 +2023,137 @@ def _with_execution_policy(node_name: str, node_fn):
         if policy_events:
             result["policy_events"] = list(result.get("policy_events", [])) + policy_events
 
+        # ponytail: AVO — lineage + supervisor, guarded never crashes; artifact_cache above, loop_detector below
+        try:
+            # lazy imports (after artifact_cache, before loop_detector) — try real AVO then utils fallback
+            _avo_ls = None
+            _Cand = None
+            try:
+                from src.memory.lineage_store import LineageStore as _LSCls, Candidate as _CandCls  # type: ignore
+                try:
+                    _avo_ls = _LSCls(db_path="data/lineage.db")  # type: ignore
+                    _Cand = _CandCls  # type: ignore
+                except Exception:
+                    _avo_ls = None
+            except ImportError:
+                _avo_ls = None
+            if _avo_ls is None:
+                try:
+                    from ..utils.lineage_store import lineage_store as _avo_ls  # type: ignore
+                except ImportError:
+                    try:
+                        from src.utils.lineage_store import lineage_store as _avo_ls  # type: ignore
+                    except ImportError:
+                        _avo_ls = None  # type: ignore
+            _avo_sup = None
+            try:
+                from src.agents.supervisor import Supervisor as _SupCls  # type: ignore
+                try:
+                    _avo_sup = _SupCls()  # type: ignore
+                except Exception:
+                    _avo_sup = None
+            except ImportError:
+                _avo_sup = None
+            if _avo_sup is None:
+                try:
+                    from ..utils.supervisor import supervisor as _avo_sup  # type: ignore
+                except ImportError:
+                    try:
+                        from src.utils.supervisor import supervisor as _avo_sup  # type: ignore
+                    except ImportError:
+                        _avo_sup = None  # type: ignore
+            # lineage add on each candidate eval (tests_passed, feature, quality)
+            try:
+                if _avo_ls is not None:
+                    _tp = bool(result.get("tests_passed", state.get("tests_passed", False)))
+                    _tr = result.get("test_results") if isinstance(result.get("test_results"), dict) else state.get("test_results") if isinstance(state.get("test_results"), dict) else {}
+                    _fv = _tr.get("feature_verification", {}) if isinstance(_tr, dict) else {}
+                    _feat = 0.0
+                    try:
+                        _feat = float(((_fv.get("summary") or {}).get("pass_rate", 0.0)) or 0.0)
+                    except Exception:
+                        _feat = 0.0
+                    _qual = 0.0
+                    try:
+                        _qual = float(result.get("self_eval_score", state.get("self_eval_score", 0.0)) or 0.0)
+                        if not _qual:
+                            _gr = result.get("goal_eval_report") if isinstance(result.get("goal_eval_report"), dict) else state.get("goal_eval_report") if isinstance(state.get("goal_eval_report"), dict) else {}
+                            if isinstance(_gr, dict):
+                                _qual = float(_gr.get("overall_pct_implemented", 0.0) or 0.0) / 10.0
+                    except Exception:
+                        _qual = 0.0
+                    if _Cand is not None:
+                        try:
+                            import uuid as _uuid_avo
+                            _fh = ""
+                            try:
+                                _files = (result.get("generated_code") or state.get("generated_code") or {}).get("files", {}) if isinstance(result.get("generated_code") or state.get("generated_code"), dict) else {}
+                                if isinstance(_files, dict) and _files:
+                                    try:
+                                        from src.utils.artifact_cache import compute_fp as _cfp_avo  # type: ignore
+                                        _fh = _cfp_avo(_files) or ""  # type: ignore
+                                    except Exception:
+                                        _fh = ""
+                            except Exception:
+                                _fh = ""
+                            _cand = _Cand(id=str(_uuid_avo.uuid4())[:8], files_hash=_fh, scores={"tests": 1 if _tp else 0, "feature": _feat/100.0, "quality": _qual/10.0}, eval={"tests_passed": _tp, "feature": _feat, "quality": _qual}, created_at=__import__("time").time())  # type: ignore
+                            _avo_ls.add(_cand)  # type: ignore
+                        except Exception:
+                            try:
+                                _avo_ls.add({"tests_passed": _tp, "feature": _feat, "quality": _qual, "node": node_name, "stage": str(result.get("current_stage", ""))})  # type: ignore
+                            except Exception:
+                                pass
+                    else:
+                        _avo_ls.add({"tests_passed": _tp, "feature": _feat, "quality": _qual, "node": node_name, "stage": str(result.get("current_stage", ""))})  # type: ignore
+            except Exception:
+                pass
+            # supervisor intervention on loop_turn
+            try:
+                if _avo_ls is not None and _avo_sup is not None:
+                    _is_loop = node_name in {"code_testing", "feature_verification", "strategy_reasoner", "code_fixing", "smoke_test", "pipeline_self_eval", "goal_achievement_eval"} or bool(result.get("_fix_stagnation_streak") or result.get("_failure_signature_streak") or state.get("_fix_stagnation_streak") or state.get("_failure_signature_streak"))
+                    if _is_loop:
+                        _hist: Any = []
+                        try:
+                            _raw = _avo_ls.top(5) if hasattr(_avo_ls, "top") else []  # type: ignore
+                            # normalize Candidate -> dict for supervisor
+                            _hist = []
+                            for _h in _raw or []:
+                                if isinstance(_h, dict):
+                                    _hist.append(_h)
+                                else:
+                                    try:
+                                        _sc = getattr(_h, "scores", {}) or {}
+                                        _hist.append({"fingerprint": getattr(_h, "files_hash", ""), "score": float(_sc.get("tests", 0) or 0) + float(_sc.get("feature", 0) or 0) + float(_sc.get("quality", 0) or 0), "stagnation_streak": result.get("_fix_stagnation_streak", 0) or state.get("_fix_stagnation_streak", 0), "tests_passed": _sc.get("tests", 0), "feature": _sc.get("feature", 0)*100, "quality": _sc.get("quality", 0)*10})
+                                    except Exception:
+                                        _hist.append(str(_h))
+                        except Exception:
+                            _hist = []
+                        _out: Any = None
+                        try:
+                            _out = _avo_sup.should_intervene(_hist) if hasattr(_avo_sup, "should_intervene") else None  # type: ignore
+                        except Exception:
+                            _out = None
+                        _intervene = False
+                        _hint = ""
+                        if isinstance(_out, dict):
+                            _intervene = bool(_out.get("intervene") or _out.get("should_intervene"))
+                            _hint = str(_out.get("hint") or _out.get("reason") or _out.get("new_plan") or "")
+                        elif isinstance(_out, (list, tuple)) and len(_out) >= 2:
+                            _intervene = bool(_out[0])
+                            _hint = str(_out[1] or "")
+                        elif isinstance(_out, bool):
+                            _intervene = _out
+                        if _intervene and _hint:
+                            result["strategy_reasoner_hint"] = _hint
+                            result["_fix_stagnation_streak"] = 0
+                            result["_failure_signature_streak"] = 0
+                            result["_last_failure_signature"] = ""
+                            result["warnings"] = list(result.get("warnings", [])) + [f"AVO supervisor intervened at {node_name}: {_hint[:120]}"]
+            except Exception:
+                pass
+        except Exception:
+            pass
+
         result = _update_loop_detection_state(state, node_name, result)
 
         result = _update_pipeline_todos(state, node_name, result)
