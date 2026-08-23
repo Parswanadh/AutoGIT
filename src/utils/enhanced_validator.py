@@ -122,8 +122,8 @@ class EnhancedValidator:
                 syntax_ok, type_ok, security_score, lint_score
             )
             
-            # Determine if passed
-            if results["quality_score"] < 50:
+            # Determine if passed — ponytail: tightened 50→65 after wiring stable
+            if results["quality_score"] < 65:
                 results["passed"] = False
             
         finally:

@@ -633,7 +633,7 @@ _STAGE_FANOUT_CAPS: Dict[str, int] = {
     "critique": 6,
 }
 
-_HIGH_RISK_NODES = {"git_publishing"}
+_HIGH_RISK_NODES = {"git_publishing", "code_testing", "smoke_test", "code_fixing", "code_generation"}  # ponytail: strict allowlist covers real risky exec/publish nodes
 
 
 def _structured_error_envelope(
@@ -741,12 +741,12 @@ def _evaluate_execution_policy(state: AutoGITState, node_name: str) -> Dict[str,
                 },
             }
 
-    if allowlist_mode == "strict" and node_name == "git_publishing" and trust_mode != "trusted":
-        reason = f"Strict allowlist prevents publishing in {trust_mode} mode"
+    if allowlist_mode == "strict" and node_name in _HIGH_RISK_NODES and trust_mode != "trusted":
+        reason = f"Strict allowlist blocks {node_name} in {trust_mode} mode"
         return {
             "blocked": True,
             "result": {
-                "current_stage": "publish_blocked_policy",
+                "current_stage": "publish_blocked_policy" if node_name == "git_publishing" else f"{node_name}_blocked_allowlist",
                 "warnings": [reason],
                 "policy_events": [{
                     "event": "blocked_by_allowlist",

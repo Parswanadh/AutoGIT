@@ -7282,8 +7282,8 @@ async def code_testing_node(state: AutoGITState) -> Dict[str, Any]:
                 logger.warning("⚠️  Some tests failed")
                 for error in test_results.get("execution_errors", []):
                     logger.error(f"  ❌ {error}")
-                if avg_quality < 50:
-                    logger.warning(f"  ❌ Quality too low: {avg_quality:.1f}/100 (need ≥50)")
+                if avg_quality < 65:
+                    logger.warning(f"  ❌ Quality too low: {avg_quality:.1f}/100 (need ≥65)")  # ponytail: tightened 50→65 after wiring stable
             
             # Log warnings
             for warning in test_results.get("warnings", []):
