@@ -10,9 +10,11 @@ Features:
 - TTL-based expiration
 """
 
-import json
+import base64
 import hashlib
-import pickle
+import hmac
+import json
+import os
 import time
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, asdict
@@ -27,6 +29,70 @@ import sqlite3
 from src.utils.logger import get_logger
 
 logger = get_logger("cache")
+
+
+def _hmac_key() -> Optional[str]:
+    return os.getenv("AUTOGIT_HMAC_KEY") or os.getenv("CHECKPOINT_HMAC_KEY") or os.getenv("CACHE_HMAC_KEY")
+
+
+def _encode(obj: Any) -> Any:
+    if isinstance(obj, bytes):
+        return {"__bytes_b64": base64.b64encode(obj).decode("ascii")}
+    if isinstance(obj, dict):
+        return {k: _encode(v) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [_encode(v) for v in obj]
+    if isinstance(obj, tuple):
+        return {"__tuple__": [_encode(v) for v in obj]}
+    return obj
+
+
+def _decode(obj: Any) -> Any:
+    if isinstance(obj, dict):
+        if "__bytes_b64" in obj and len(obj) == 1:
+            try:
+                return base64.b64decode(obj["__bytes_b64"])
+            except Exception:
+                return obj
+        if "__tuple__" in obj and len(obj) == 1:
+            return tuple(_decode(v) for v in obj["__tuple__"])
+        return {k: _decode(v) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [_decode(v) for v in obj]
+    return obj
+
+
+def _serialize(value: Any) -> bytes:
+    enc = _encode(value)
+    key = _hmac_key()
+    if key:
+        payload = json.dumps(enc, sort_keys=True, separators=(",", ":"))
+        sig = hmac.new(key.encode(), payload.encode(), hashlib.sha256).hexdigest()
+        wrapper = {"__hmac": sig, "data": enc}
+        return json.dumps(wrapper).encode()
+    return json.dumps(enc).encode()
+
+
+def _deserialize(blob: bytes) -> Any:
+    # try json first, fallback pickle for legacy
+    try:
+        text = blob.decode() if isinstance(blob, (bytes, bytearray)) else blob
+        obj = json.loads(text)
+    except (json.JSONDecodeError, UnicodeDecodeError, AttributeError):
+        try:
+            pk = __import__("pickle")
+            return pk.loads(blob)
+        except Exception:
+            raise
+    key = _hmac_key()
+    if isinstance(obj, dict) and "__hmac" in obj and "data" in obj and len(obj) == 2:
+        if key:
+            payload = json.dumps(obj["data"], sort_keys=True, separators=(",", ":"))
+            exp = hmac.new(key.encode(), payload.encode(), hashlib.sha256).hexdigest()
+            if not hmac.compare_digest(exp, obj["__hmac"]):
+                raise ValueError("cache HMAC verification failed")
+        obj = obj["data"]
+    return _decode(obj)
 
 
 class CacheStrategy(Enum):
@@ -259,7 +325,7 @@ class InMemoryCache(BaseCache):
 
 class SQLiteCache(BaseCache):
     """
-    Persistent cache using SQLite.
+    Persistent cache using SQLite (JSON + base64 + optional HMAC, pickle fallback).
 
     Slower than in-memory but survives restarts.
     """
@@ -326,7 +392,7 @@ class SQLiteCache(BaseCache):
         return conn
 
     def get(self, key: str) -> Optional[Any]:
-        """Get value from cache."""
+        """Get value from cache (json first, pickle fallback)."""
         try:
             with self._connect() as conn:
                 cursor = conn.execute(
@@ -355,17 +421,17 @@ class SQLiteCache(BaseCache):
                 conn.commit()
 
                 self._hits += 1
-                return pickle.loads(value_blob)
+                return _deserialize(value_blob)
 
-        except (sqlite3.Error, pickle.PickleError) as e:
+        except (sqlite3.Error, json.JSONDecodeError, ValueError) as e:
             logger.error(f"[{self.name}] Cache get failed: {e}")
             self._misses += 1
             return None
 
     def set(self, key: str, value: Any, ttl: Optional[float] = None):
-        """Set value in cache."""
+        """Set value in cache (JSON + base64)."""
         try:
-            value_blob = pickle.dumps(value)
+            value_blob = _serialize(value)
             timestamp = time.time()
             ttl_value = ttl or self.default_ttl
 
@@ -379,7 +445,7 @@ class SQLiteCache(BaseCache):
                 )
                 conn.commit()
 
-        except (sqlite3.Error, pickle.PickleError) as e:
+        except (sqlite3.Error, TypeError, ValueError) as e:
             logger.error(f"[{self.name}] Cache set failed: {e}")
 
     def delete(self, key: str) -> bool:

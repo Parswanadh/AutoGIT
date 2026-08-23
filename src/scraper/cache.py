@@ -1,5 +1,9 @@
 """Scraper shared SQLiteCache — WAL, isolated, OOM-guarded, parallel-safe."""
-import pickle
+import base64
+import hashlib
+import hmac
+import json
+import os
 import threading
 import sqlite3
 from pathlib import Path
@@ -17,6 +21,26 @@ MAX_VALUE_BYTES = 512 * 1024
 MAX_ENTRIES = 5000
 
 
+def _encode(obj: Any) -> Any:
+    if isinstance(obj, bytes):
+        return {"__bytes_b64": base64.b64encode(obj).decode("ascii")}
+    if isinstance(obj, dict):
+        return {k: _encode(v) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [_encode(v) for v in obj]
+    if isinstance(obj, tuple):
+        return {"__tuple__": [_encode(v) for v in obj]}
+    return obj
+
+
+def _size_json(value: Any) -> int:
+    try:
+        enc = _encode(value)
+        return len(json.dumps(enc).encode())
+    except Exception:
+        return 0
+
+
 class ScraperCache(SQLiteCache):
     """Isolated scraper cache. Shared via WAL, bounded to avoid OOM."""
 
@@ -24,14 +48,14 @@ class ScraperCache(SQLiteCache):
         super().__init__(TABLE, db_path, default_ttl=default_ttl)
 
     def set(self, key: str, value: Any, ttl: Optional[float] = None):
-        # ponytail: OOM guard — drop huge values before pickling hits disk
+        # ponytail: OOM guard — drop huge values before json hits disk
         try:
-            blob = pickle.dumps(value)
-            if len(blob) > MAX_VALUE_BYTES:
-                logger.warning(f"[scraper_cache] drop large key={key} size={len(blob)} > {MAX_VALUE_BYTES}")
+            sz = _size_json(value)
+            if sz > MAX_VALUE_BYTES:
+                logger.warning(f"[scraper_cache] drop large key={key} size={sz} > {MAX_VALUE_BYTES}")
                 return
         except Exception:
-            pass  # let base handle pickle errors
+            pass  # let base handle errors
         try:
             super().set(key, value, ttl=ttl)
         except Exception as e:
