@@ -20,16 +20,21 @@ import {
   Code2,
   FolderArchive,
   RefreshCw,
+  SplitSquareVertical,
 } from 'lucide-react';
 import { keyStore } from '@/lib/storage/keyStore';
 import { OpenRouterClient } from '@/lib/openrouter/client';
-import { WorkflowEngine, WorkflowState } from '@/lib/workflow/engine';
+import { WorkflowEngine, WorkflowState, WorkflowFile } from '@/lib/workflow/engine';
 import StudioHeader from '@/components/studio/StudioHeader';
 import ApiKeyModal from '@/components/studio/ApiKeyModal';
 import InputConfigPanel, { PRESET_TOPICS, PresetTopic } from '@/components/studio/InputConfigPanel';
 import PipelineVisualizer from '@/components/studio/PipelineVisualizer';
 import DebateStreamViewer from '@/components/studio/DebateStreamViewer';
 import TerminalLogViewer from '@/components/studio/TerminalLogViewer';
+import CodeWorkspace from '@/components/studio/CodeWorkspace';
+import DiffViewer from '@/components/studio/DiffViewer';
+import GitHubPublishModal from '@/components/studio/GitHubPublishModal';
+import ZipExportModal from '@/components/studio/ZipExportModal';
 
 interface StudioWorkspaceProps {
   currentMode: 'studio' | 'showcase';
@@ -42,12 +47,14 @@ export default function StudioWorkspace({
 }: StudioWorkspaceProps) {
   const [topic, setTopic] = useState('');
   const [isKeyModalOpen, setIsKeyModalOpen] = useState(false);
+  const [isPublishModalOpen, setIsPublishModalOpen] = useState(false);
+  const [isZipModalOpen, setIsZipModalOpen] = useState(false);
   const [hasORKey, setHasORKey] = useState(false);
   const [hasGHPat, setHasGHPat] = useState(false);
   const [selectedPreset, setSelectedPreset] = useState<string | null>(null);
   const [selectedProfile, setSelectedProfile] = useState<'reasoning' | 'powerful' | 'balanced' | 'fast'>('balanced');
   const [maxRounds, setMaxRounds] = useState(2);
-  const [activeTab, setActiveTab] = useState<'pipeline' | 'debate' | 'terminal' | 'code'>('pipeline');
+  const [activeTab, setActiveTab] = useState<'pipeline' | 'debate' | 'terminal' | 'code' | 'diff'>('pipeline');
   const [selectedFile, setSelectedFile] = useState<string>('main.py');
 
   // Workflow State tracking
@@ -126,7 +133,7 @@ export default function StudioWorkspace({
       engineRef.current = engine;
       bindEngineEvents(engine);
 
-      // Auto-switch to pipeline or debate tab on launch
+      // Auto-switch to pipeline tab on launch
       setActiveTab('pipeline');
       await engine.execute(topic);
     } catch (err) {
@@ -146,6 +153,50 @@ export default function StudioWorkspace({
   const handleCancel = () => {
     if (engineRef.current) {
       engineRef.current.cancel();
+    }
+  };
+
+  const handleUpdateFile = (fileName: string, newContent: string) => {
+    setWorkflowState((prev) => ({
+      ...prev,
+      generatedFiles: {
+        ...prev.generatedFiles,
+        [fileName]: {
+          path: fileName,
+          content: newContent,
+          language: fileName.endsWith('.py') ? 'python' : 'plaintext',
+        },
+      },
+    }));
+  };
+
+  const handleCreateFile = (fileName: string, initialContent: string = '') => {
+    setWorkflowState((prev) => ({
+      ...prev,
+      generatedFiles: {
+        ...prev.generatedFiles,
+        [fileName]: {
+          path: fileName,
+          content: initialContent,
+          language: fileName.endsWith('.py') ? 'python' : 'plaintext',
+        },
+      },
+    }));
+    setSelectedFile(fileName);
+  };
+
+  const handleDeleteFile = (fileName: string) => {
+    setWorkflowState((prev) => {
+      const nextFiles = { ...prev.generatedFiles };
+      delete nextFiles[fileName];
+      return {
+        ...prev,
+        generatedFiles: nextFiles,
+      };
+    });
+    const remaining = Object.keys(workflowState.generatedFiles).filter((f) => f !== fileName);
+    if (remaining.length > 0) {
+      setSelectedFile(remaining[0]);
     }
   };
 
@@ -221,14 +272,14 @@ export default function StudioWorkspace({
             />
           </div>
 
-          {/* Right Column: Execution Workspace (DAG, Debate, Console, Code) */}
+          {/* Right Column: Execution Workspace (DAG, Debate, Console, Code, Diff) */}
           <div className="lg:col-span-7 space-y-4">
             {/* Tab Navigation Header */}
             <div className="flex items-center justify-between bg-slate-900/80 p-1.5 rounded-2xl border border-slate-800">
-              <div className="flex items-center space-x-1">
+              <div className="flex items-center space-x-1 overflow-x-auto scrollbar-none">
                 <button
                   onClick={() => setActiveTab('pipeline')}
-                  className={`px-3.5 py-1.5 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-all ${
+                  className={`px-3.5 py-1.5 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-all shrink-0 ${
                     activeTab === 'pipeline'
                       ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 shadow-sm'
                       : 'text-slate-400 hover:text-slate-200'
@@ -240,7 +291,7 @@ export default function StudioWorkspace({
 
                 <button
                   onClick={() => setActiveTab('debate')}
-                  className={`px-3.5 py-1.5 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-all ${
+                  className={`px-3.5 py-1.5 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-all shrink-0 ${
                     activeTab === 'debate'
                       ? 'bg-purple-500/20 text-purple-300 border border-purple-500/40 shadow-sm'
                       : 'text-slate-400 hover:text-slate-200'
@@ -257,7 +308,7 @@ export default function StudioWorkspace({
 
                 <button
                   onClick={() => setActiveTab('terminal')}
-                  className={`px-3.5 py-1.5 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-all ${
+                  className={`px-3.5 py-1.5 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-all shrink-0 ${
                     activeTab === 'terminal'
                       ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 shadow-sm'
                       : 'text-slate-400 hover:text-slate-200'
@@ -273,30 +324,65 @@ export default function StudioWorkspace({
                 </button>
 
                 {generatedFileNames.length > 0 && (
-                  <button
-                    onClick={() => setActiveTab('code')}
-                    className={`px-3.5 py-1.5 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-all ${
-                      activeTab === 'code'
-                        ? 'bg-blue-500/20 text-blue-300 border border-blue-500/40 shadow-sm'
-                        : 'text-slate-400 hover:text-slate-200'
-                    }`}
-                  >
-                    <Code2 className="w-3.5 h-3.5" />
-                    <span>Files ({generatedFileNames.length})</span>
-                  </button>
+                  <>
+                    <button
+                      onClick={() => setActiveTab('code')}
+                      className={`px-3.5 py-1.5 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-all shrink-0 ${
+                        activeTab === 'code'
+                          ? 'bg-blue-500/20 text-blue-300 border border-blue-500/40 shadow-sm'
+                          : 'text-slate-400 hover:text-slate-200'
+                      }`}
+                    >
+                      <Code2 className="w-3.5 h-3.5" />
+                      <span>Files ({generatedFileNames.length})</span>
+                    </button>
+
+                    <button
+                      onClick={() => setActiveTab('diff')}
+                      className={`px-3.5 py-1.5 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-all shrink-0 ${
+                        activeTab === 'diff'
+                          ? 'bg-fuchsia-500/20 text-fuchsia-300 border border-fuchsia-500/40 shadow-sm'
+                          : 'text-slate-400 hover:text-slate-200'
+                      }`}
+                    >
+                      <SplitSquareVertical className="w-3.5 h-3.5" />
+                      <span>Diff View</span>
+                    </button>
+                  </>
                 )}
               </div>
 
-              {/* Status Indicator */}
-              <div className="pr-2 text-[11px] font-mono flex items-center gap-1.5">
-                <span
-                  className={`w-2 h-2 rounded-full ${
-                    isRunning ? 'bg-cyan-400 animate-ping' : workflowState.status === 'completed' ? 'bg-emerald-400' : 'bg-slate-600'
-                  }`}
-                />
-                <span className="text-slate-400 uppercase text-[10px] font-bold">
-                  {workflowState.status}
-                </span>
+              {/* Status Indicator & Global Export Triggers */}
+              <div className="pr-2 text-[11px] font-mono flex items-center gap-2">
+                {generatedFileNames.length > 0 && (
+                  <div className="hidden sm:flex items-center space-x-1.5 mr-2">
+                    <button
+                      onClick={() => setIsZipModalOpen(true)}
+                      className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-emerald-400 border border-slate-700 transition-colors"
+                      title="Download Zip Archive"
+                    >
+                      <FolderArchive className="w-3.5 h-3.5" />
+                    </button>
+                    <button
+                      onClick={() => setIsPublishModalOpen(true)}
+                      className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-cyan-400 border border-slate-700 transition-colors"
+                      title="Publish to GitHub"
+                    >
+                      <GitBranch className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                )}
+
+                <div className="flex items-center gap-1.5">
+                  <span
+                    className={`w-2 h-2 rounded-full ${
+                      isRunning ? 'bg-cyan-400 animate-ping' : workflowState.status === 'completed' ? 'bg-emerald-400' : 'bg-slate-600'
+                    }`}
+                  />
+                  <span className="text-slate-400 uppercase text-[10px] font-bold">
+                    {workflowState.status}
+                  </span>
+                </div>
               </div>
             </div>
 
@@ -338,47 +424,26 @@ export default function StudioWorkspace({
               )}
 
               {activeTab === 'code' && (
-                <div className="p-5 rounded-2xl bg-slate-900/70 border border-slate-800 shadow-xl space-y-3">
-                  <div className="flex items-center justify-between border-b border-slate-800 pb-3">
-                    <div className="flex items-center space-x-2">
-                      <FileCode className="w-4 h-4 text-blue-400" />
-                      <h4 className="text-xs font-orbitron font-semibold text-white">
-                        Synthesized Repository Files
-                      </h4>
-                    </div>
-                    <span className="text-[11px] font-mono text-slate-400">
-                      {generatedFileNames.length} Files Generated
-                    </span>
-                  </div>
+                <CodeWorkspace
+                  files={workflowState.generatedFiles}
+                  selectedFile={selectedFile}
+                  onSelectFile={(f) => setSelectedFile(f)}
+                  onUpdateFile={handleUpdateFile}
+                  onCreateFile={handleCreateFile}
+                  onDeleteFile={handleDeleteFile}
+                  onPublishToGitHub={() => setIsPublishModalOpen(true)}
+                  onExportZip={() => setIsZipModalOpen(true)}
+                  onOpenDiff={() => setActiveTab('diff')}
+                  hasGitHubPat={hasGHPat}
+                />
+              )}
 
-                  {/* File Tabs */}
-                  <div className="flex items-center space-x-1.5 overflow-x-auto pb-1 scrollbar-none">
-                    {generatedFileNames.map((fileName) => (
-                      <button
-                        key={fileName}
-                        onClick={() => setSelectedFile(fileName)}
-                        className={`px-3 py-1 rounded-lg text-xs font-mono transition-colors ${
-                          selectedFile === fileName
-                            ? 'bg-blue-950/80 text-blue-300 border border-blue-500/40'
-                            : 'bg-slate-950/40 text-slate-400 hover:text-slate-200 border border-slate-800'
-                        }`}
-                      >
-                        {fileName}
-                      </button>
-                    ))}
-                  </div>
-
-                  {/* File Code Display */}
-                  {workflowState.generatedFiles[selectedFile] ? (
-                    <div className="rounded-xl bg-[#020617] border border-slate-800 p-4 max-h-[380px] overflow-y-auto font-mono text-xs text-slate-300 leading-relaxed whitespace-pre scrollbar-thin scrollbar-thumb-slate-800">
-                      {workflowState.generatedFiles[selectedFile].content}
-                    </div>
-                  ) : (
-                    <div className="p-8 text-center text-slate-500 text-xs">
-                      No file selected or files are currently generating...
-                    </div>
-                  )}
-                </div>
+              {activeTab === 'diff' && (
+                <DiffViewer
+                  files={workflowState.generatedFiles}
+                  selectedFile={selectedFile}
+                  onClose={() => setActiveTab('code')}
+                />
               )}
             </div>
           </div>
@@ -392,6 +457,24 @@ export default function StudioWorkspace({
         onKeysUpdated={() => {
           refreshKeyStatus();
         }}
+      />
+
+      {/* GitHub Publish Modal */}
+      <GitHubPublishModal
+        isOpen={isPublishModalOpen}
+        onClose={() => setIsPublishModalOpen(false)}
+        files={workflowState.generatedFiles}
+        topicOrArxiv={workflowState.topicOrArxiv || topic}
+        paperTitle={workflowState.paperTitle}
+        paperSummary={workflowState.paperSummary}
+      />
+
+      {/* Zip Export Modal */}
+      <ZipExportModal
+        isOpen={isZipModalOpen}
+        onClose={() => setIsZipModalOpen(false)}
+        files={workflowState.generatedFiles}
+        topicOrArxiv={workflowState.topicOrArxiv || topic}
       />
     </div>
   );

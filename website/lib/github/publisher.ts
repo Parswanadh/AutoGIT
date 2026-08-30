@@ -1,0 +1,377 @@
+/**
+ * AutoGIT Direct GitHub REST & Git Data API Publisher
+ * Pure client-side BYOK publisher that creates repositories and pushes multi-file commits
+ * directly from the browser using the user's GitHub Personal Access Token (PAT).
+ */
+
+import { WorkflowFile } from '../workflow/engine';
+
+export interface PublishOptions {
+  repoName: string;
+  description?: string;
+  isPrivate?: boolean;
+  files: Record<string, WorkflowFile | { path: string; content: string }>;
+  commitMessage?: string;
+}
+
+export interface PublishResult {
+  repoUrl: string;
+  cloneUrl: string;
+  commitSha: string;
+  publishedFilesCount: number;
+}
+
+export interface GitHubUserVerification {
+  username: string;
+  name?: string;
+  avatarUrl?: string;
+  scopes: string[];
+}
+
+export interface IGitHubPublisher {
+  verifyToken(pat: string): Promise<GitHubUserVerification>;
+  createAndPushRepo(
+    pat: string,
+    options: PublishOptions,
+    onProgress?: (step: string, progress: number) => void
+  ): Promise<PublishResult>;
+}
+
+export class GitHubPublisher implements IGitHubPublisher {
+  private apiBase: string;
+
+  constructor(apiBase: string = 'https://api.github.com') {
+    this.apiBase = apiBase.replace(/\/+$/, '');
+  }
+
+  private getHeaders(pat: string): HeadersInit {
+    const cleanPat = pat.trim();
+    const authHeader = cleanPat.startsWith('Bearer ') || cleanPat.startsWith('token ')
+      ? cleanPat
+      : `Bearer ${cleanPat}`;
+
+    return {
+      'Accept': 'application/vnd.github+json',
+      'Authorization': authHeader,
+      'X-GitHub-Api-Version': '2022-11-28',
+      'Content-Type': 'application/json',
+    };
+  }
+
+  /**
+   * Probes https://api.github.com/user to verify PAT and extract username & token scopes.
+   */
+  public async verifyToken(pat: string): Promise<GitHubUserVerification> {
+    if (!pat || typeof pat !== 'string' || pat.trim().length === 0) {
+      throw new Error('GitHub Personal Access Token is required.');
+    }
+
+    const response = await fetch(`${this.apiBase}/user`, {
+      method: 'GET',
+      headers: this.getHeaders(pat),
+    });
+
+    if (response.status === 401) {
+      throw new Error('Invalid GitHub Personal Access Token (401 Unauthorized). Please check your token.');
+    }
+
+    if (response.status === 403) {
+      const remaining = response.headers.get('x-ratelimit-remaining');
+      if (remaining === '0') {
+        throw new Error('GitHub API rate limit exceeded. Please wait before retrying.');
+      }
+      throw new Error('Access forbidden (403). Ensure your GitHub PAT has the "repo" scope.');
+    }
+
+    if (!response.ok) {
+      let errDetail = response.statusText;
+      try {
+        const errorJson = await response.json();
+        if (errorJson.message) errDetail = errorJson.message;
+      } catch {
+        // ignore
+      }
+      throw new Error(`GitHub token verification failed (${response.status}): ${errDetail}`);
+    }
+
+    const data = await response.json();
+    const scopesHeader = response.headers.get('x-oauth-scopes') || '';
+    const scopes = scopesHeader
+      .split(',')
+      .map((s) => s.trim())
+      .filter(Boolean);
+
+    return {
+      username: data.login,
+      name: data.name || data.login,
+      avatarUrl: data.avatar_url,
+      scopes,
+    };
+  }
+
+  /**
+   * Executes the complete Git Data API sequence:
+   * 1. /user -> verify and get login
+   * 2. POST /user/repos -> create repository
+   * 3. POST /repos/{owner}/{repo}/git/blobs -> create blobs for each file
+   * 4. GET /repos/{owner}/{repo}/git/ref/heads/main -> fetch base commit if exists
+   * 5. POST /repos/{owner}/{repo}/git/trees -> create tree
+   * 6. POST /repos/{owner}/{repo}/git/commits -> create atomic commit
+   * 7. POST or PATCH /repos/{owner}/{repo}/git/refs/heads/main -> update ref to new commit
+   */
+  public async createAndPushRepo(
+    pat: string,
+    options: PublishOptions,
+    onProgress?: (step: string, progress: number) => void
+  ): Promise<PublishResult> {
+    if (!options.repoName || options.repoName.trim().length === 0) {
+      throw new Error('Repository name cannot be empty.');
+    }
+
+    const filesEntries = Object.entries(options.files || {});
+    if (filesEntries.length === 0) {
+      throw new Error('Cannot publish an empty repository. At least one file is required.');
+    }
+
+    const cleanRepoName = options.repoName.trim().replace(/\s+/g, '-').replace(/[^a-zA-Z0-9._-]/g, '');
+
+    // Step 1: Verify token & get user
+    onProgress?.('Verifying credentials...', 10);
+    const user = await this.verifyToken(pat);
+    const owner = user.username;
+
+    // Step 2: Create repository
+    onProgress?.('Creating GitHub repository...', 25);
+    const createRepoResponse = await fetch(`${this.apiBase}/user/repos`, {
+      method: 'POST',
+      headers: this.getHeaders(pat),
+      body: JSON.stringify({
+        name: cleanRepoName,
+        description: options.description || 'Autonomous research implementation generated by AutoGIT Web Studio',
+        private: !!options.isPrivate,
+        auto_init: true,
+      }),
+    });
+
+    let repoData: any;
+    if (createRepoResponse.status === 201) {
+      repoData = await createRepoResponse.json();
+    } else if (createRepoResponse.status === 422) {
+      // Check if the repository already exists for this user
+      const existingRepoRes = await fetch(`${this.apiBase}/repos/${owner}/${cleanRepoName}`, {
+        method: 'GET',
+        headers: this.getHeaders(pat),
+      });
+
+      if (existingRepoRes.ok) {
+        repoData = await existingRepoRes.json();
+      } else {
+        const errJson = await createRepoResponse.json().catch(() => ({}));
+        throw new Error(errJson.message || `Repository '${cleanRepoName}' already exists or validation failed.`);
+      }
+    } else {
+      let errMsg = createRepoResponse.statusText;
+      try {
+        const errJson = await createRepoResponse.json();
+        if (errJson.message) errMsg = errJson.message;
+      } catch {
+        // ignore
+      }
+      throw new Error(`Failed to create repository (${createRepoResponse.status}): ${errMsg}`);
+    }
+
+    const defaultBranch = repoData.default_branch || 'main';
+
+    // Step 3: Create Blobs for each file
+    onProgress?.('Uploading file blobs...', 50);
+    const treeItems: Array<{ path: string; mode: string; type: string; sha: string }> = [];
+
+    for (let i = 0; i < filesEntries.length; i++) {
+      const [pathKey, fileObj] = filesEntries[i];
+      const filePath = (fileObj.path || pathKey).replace(/^\/+/, '');
+      const content = fileObj.content ?? '';
+
+      const blobRes = await fetch(`${this.apiBase}/repos/${owner}/${cleanRepoName}/git/blobs`, {
+        method: 'POST',
+        headers: this.getHeaders(pat),
+        body: JSON.stringify({
+          content,
+          encoding: 'utf-8',
+        }),
+      });
+
+      if (!blobRes.ok) {
+        let blobErr = blobRes.statusText;
+        try {
+          const errData = await blobRes.json();
+          if (errData.message) blobErr = errData.message;
+        } catch {
+          // ignore
+        }
+        throw new Error(`Failed to create blob for ${filePath} (${blobRes.status}): ${blobErr}`);
+      }
+
+      const blobData = await blobRes.json();
+      treeItems.push({
+        path: filePath,
+        mode: '100644',
+        type: 'blob',
+        sha: blobData.sha,
+      });
+
+      const currentProgress = 50 + Math.floor(((i + 1) / filesEntries.length) * 20);
+      onProgress?.(`Uploaded blob: ${filePath} (${i + 1}/${filesEntries.length})`, currentProgress);
+    }
+
+    // Step 4: Get base commit and base tree if ref exists
+    onProgress?.('Resolving branch references...', 72);
+    let baseCommitSha: string | undefined;
+    let baseTreeSha: string | undefined;
+    let refExists = false;
+
+    const refRes = await fetch(
+      `${this.apiBase}/repos/${owner}/${cleanRepoName}/git/ref/heads/${defaultBranch}`,
+      {
+        method: 'GET',
+        headers: this.getHeaders(pat),
+      }
+    );
+
+    if (refRes.ok) {
+      const refData = await refRes.json();
+      baseCommitSha = refData.object?.sha;
+      refExists = true;
+
+      if (baseCommitSha) {
+        const commitRes = await fetch(
+          `${this.apiBase}/repos/${owner}/${cleanRepoName}/git/commits/${baseCommitSha}`,
+          {
+            method: 'GET',
+            headers: this.getHeaders(pat),
+          }
+        );
+        if (commitRes.ok) {
+          const commitData = await commitRes.json();
+          baseTreeSha = commitData.tree?.sha;
+        }
+      }
+    }
+
+    // Step 5: Create Git Tree
+    onProgress?.('Constructing Git tree...', 80);
+    const treePayload: any = { tree: treeItems };
+    if (baseTreeSha) {
+      treePayload.base_tree = baseTreeSha;
+    }
+
+    const treeRes = await fetch(`${this.apiBase}/repos/${owner}/${cleanRepoName}/git/trees`, {
+      method: 'POST',
+      headers: this.getHeaders(pat),
+      body: JSON.stringify(treePayload),
+    });
+
+    if (!treeRes.ok) {
+      let treeErr = treeRes.statusText;
+      try {
+        const errJson = await treeRes.json();
+        if (errJson.message) treeErr = errJson.message;
+      } catch {
+        // ignore
+      }
+      throw new Error(`Failed to create Git tree (${treeRes.status}): ${treeErr}`);
+    }
+
+    const newTreeData = await treeRes.json();
+    const newTreeSha = newTreeData.sha;
+
+    // Step 6: Create Commit
+    onProgress?.('Creating commit...', 88);
+    const commitMessage =
+      options.commitMessage ||
+      `feat: autonomous research implementation via AutoGIT\n\nGenerated files:\n${treeItems.map((t) => `- ${t.path}`).join('\n')}`;
+
+    const commitPayload: any = {
+      message: commitMessage,
+      tree: newTreeSha,
+      parents: baseCommitSha ? [baseCommitSha] : [],
+    };
+
+    const commitRes = await fetch(`${this.apiBase}/repos/${owner}/${cleanRepoName}/git/commits`, {
+      method: 'POST',
+      headers: this.getHeaders(pat),
+      body: JSON.stringify(commitPayload),
+    });
+
+    if (!commitRes.ok) {
+      let commitErr = commitRes.statusText;
+      try {
+        const errJson = await commitRes.json();
+        if (errJson.message) commitErr = errJson.message;
+      } catch {
+        // ignore
+      }
+      throw new Error(`Failed to create commit (${commitRes.status}): ${commitErr}`);
+    }
+
+    const newCommitData = await commitRes.json();
+    const newCommitSha = newCommitData.sha;
+
+    // Step 7: Update or Create Branch Ref
+    onProgress?.('Updating main branch reference...', 95);
+    if (refExists) {
+      const updateRefRes = await fetch(
+        `${this.apiBase}/repos/${owner}/${cleanRepoName}/git/refs/heads/${defaultBranch}`,
+        {
+          method: 'PATCH',
+          headers: this.getHeaders(pat),
+          body: JSON.stringify({
+            sha: newCommitSha,
+            force: true,
+          }),
+        }
+      );
+
+      if (!updateRefRes.ok) {
+        let refErr = updateRefRes.statusText;
+        try {
+          const errJson = await updateRefRes.json();
+          if (errJson.message) refErr = errJson.message;
+        } catch {
+          // ignore
+        }
+        throw new Error(`Failed to update branch reference (${updateRefRes.status}): ${refErr}`);
+      }
+    } else {
+      const createRefRes = await fetch(`${this.apiBase}/repos/${owner}/${cleanRepoName}/git/refs`, {
+        method: 'POST',
+        headers: this.getHeaders(pat),
+        body: JSON.stringify({
+          ref: `refs/heads/${defaultBranch}`,
+          sha: newCommitSha,
+        }),
+      });
+
+      if (!createRefRes.ok) {
+        let refErr = createRefRes.statusText;
+        try {
+          const errJson = await createRefRes.json();
+          if (errJson.message) refErr = errJson.message;
+        } catch {
+          // ignore
+        }
+        throw new Error(`Failed to create branch reference (${createRefRes.status}): ${refErr}`);
+      }
+    }
+
+    onProgress?.('Repository published successfully!', 100);
+
+    return {
+      repoUrl: repoData.html_url || `https://github.com/${owner}/${cleanRepoName}`,
+      cloneUrl: repoData.clone_url || `https://github.com/${owner}/${cleanRepoName}.git`,
+      commitSha: newCommitSha,
+      publishedFilesCount: treeItems.length,
+    };
+  }
+}
+
+export const gitHubPublisher = new GitHubPublisher();
