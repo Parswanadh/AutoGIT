@@ -415,8 +415,8 @@ def _build_openrouter_model(model_name: str, temperature: float) -> BaseChatMode
         "trinity-large":    65_536,   # 131K ctx, supports large output
         "qwen3-next-80b":   65_536,   # 262K ctx, request 65K
         "glm-4.5-air":      65_536,   # 131K ctx, 96K max output
-        "ox-alpha":         32_000,   # stealth/ox-alpha:free 1M ctx
-        "stealth/ox-alpha": 32_000,
+        "ox-alpha":        131_072,   # UNLIMITED for complex tasks
+        "stealth/ox-alpha": 131_072,
     }
     _name_lower = model_name.lower()
     _best_len, _max_tokens = 0, 32_768  # safe default

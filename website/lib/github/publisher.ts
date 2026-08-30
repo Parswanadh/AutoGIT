@@ -133,7 +133,11 @@ export class GitHubPublisher implements IGitHubPublisher {
       throw new Error('Cannot publish an empty repository. At least one file is required.');
     }
 
-    const cleanRepoName = options.repoName.trim().replace(/\s+/g, '-').replace(/[^a-zA-Z0-9._-]/g, '');
+    const cleanRepoName = options.repoName
+      .trim()
+      .replace(/\s+/g, '-')
+      .replace(/[^a-zA-Z0-9._-]/g, '')
+      .replace(/-+/g, '-');
 
     // Step 1: Verify token & get user
     onProgress?.('Verifying credentials...', 10);

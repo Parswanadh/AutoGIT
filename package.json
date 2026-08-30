@@ -1,4 +1,14 @@
 {
+  "name": "autogit",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "npm --prefix website run dev",
+    "build": "npm --prefix website run build",
+    "lint": "npm --prefix website run lint",
+    "test": "npm --prefix website run test",
+    "deploy": "vercel --prod website"
+  },
   "dependencies": {
     "react-icons": "^5.5.0"
   }

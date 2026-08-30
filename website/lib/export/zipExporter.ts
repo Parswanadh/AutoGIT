@@ -148,7 +148,11 @@ pytest>=7.0.0
    */
   public async generateZip(options: ZipExportOptions): Promise<JSZip> {
     const zip = new JSZip();
-    const projectName = (options.projectName || 'autogit-repo').trim().replace(/[^a-zA-Z0-9._-]/g, '-');
+    const projectName = (options.projectName || 'autogit-repo')
+      .trim()
+      .replace(/[^a-zA-Z0-9._-]/g, '-')
+      .replace(/-+/g, '-')
+      .replace(/^-+|-+$/g, '');
     const includeScaffolding = options.includeStandardScaffolding !== false;
 
     let rootPrefix = '';
