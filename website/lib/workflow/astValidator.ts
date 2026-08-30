@@ -451,9 +451,14 @@ export class PythonAstValidator {
     const missingDependencies: string[] = [];
     const unnecessaryStdlibInRequirements: string[] = [];
 
-    const projectFileBaseNames = new Set(
-      Object.keys(files).map((f) => f.replace(/\.py$/, '').replace(/^.*\//, ''))
-    );
+    const projectFileBaseNames = new Set<string>();
+    for (const f of Object.keys(files)) {
+      projectFileBaseNames.add(f.replace(/\.py$/, '').replace(/^.*\//, ''));
+      const parts = f.split('/');
+      if (parts.length > 1) {
+        projectFileBaseNames.add(parts[0]);
+      }
+    }
 
     let totalLines = 0;
     let validFilesCount = 0;

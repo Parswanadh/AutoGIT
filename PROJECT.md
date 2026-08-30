@@ -72,7 +72,7 @@ AutoGIT Web Studio is a pure client-side, zero-backend, Bring-Your-Own-Key (BYOK
 | M3 | Autonomous Workflow Engine & Live Streaming UI (R3) | arXiv ingestion, 6-persona multi-agent debate, code generation engine, AST validator, self-healing reflection, reactive DAG visualizer, stream logs. | M2 | DONE |
 | M4 | Code Workspace, Diff Viewer, Zip Exporter & GitHub Publisher (R3) | Multi-file Monaco/CodeMirror editor, side-by-side diff viewer, JSZip package builder, GitHub REST Git Data API publisher modal. | M3 | DONE |
 | M5 | Test Suite, Verification & Vercel CLI Deployment (R4) | Unit & integration tests in `website/tests/`, Next.js build verification (`npm run build`), Vercel CLI deployment setup (`vercel --prod`). | M4 | DONE |
-| M6 | Final Milestone: E2E Test Suite Pass & Coverage Hardening | Phase 1: Pass 100% of E2E tests (Tiers 1-4 published by E2E track). Phase 2: Adversarial Coverage Hardening (Tier 5). | M5, TEST_READY | PLANNED |
+| M6 | Final Milestone: E2E Test Suite Pass & Coverage Hardening | Phase 1: Pass 100% of E2E tests (Tiers 1-4 published by E2E track). Phase 2: Adversarial Coverage Hardening (Tier 5). | M5, TEST_READY | DONE |
 
 ---
 
