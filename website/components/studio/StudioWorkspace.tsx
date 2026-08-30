@@ -1,7 +1,7 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
-import { motion } from 'framer-motion';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
 import {
   Sparkles,
   Play,
@@ -15,41 +15,26 @@ import {
   Cpu,
   CheckCircle2,
   AlertCircle,
-  HelpCircle,
   Layers,
-  ArrowRight,
+  MessageSquareCode,
+  Code2,
+  FolderArchive,
+  RefreshCw,
 } from 'lucide-react';
 import { keyStore } from '@/lib/storage/keyStore';
+import { OpenRouterClient } from '@/lib/openrouter/client';
+import { WorkflowEngine, WorkflowState } from '@/lib/workflow/engine';
 import StudioHeader from '@/components/studio/StudioHeader';
 import ApiKeyModal from '@/components/studio/ApiKeyModal';
+import InputConfigPanel, { PRESET_TOPICS, PresetTopic } from '@/components/studio/InputConfigPanel';
+import PipelineVisualizer from '@/components/studio/PipelineVisualizer';
+import DebateStreamViewer from '@/components/studio/DebateStreamViewer';
+import TerminalLogViewer from '@/components/studio/TerminalLogViewer';
 
 interface StudioWorkspaceProps {
   currentMode: 'studio' | 'showcase';
   onModeChange: (mode: 'studio' | 'showcase') => void;
 }
-
-const PRESET_TOPICS = [
-  {
-    title: 'Self-Correction Agent with AST Validation',
-    arxiv: '2305.18290',
-    desc: 'Multi-turn self-healing Python code synthesizer with AST verification',
-  },
-  {
-    title: 'Linear Attention & State-Space Mamba',
-    arxiv: '2312.00752',
-    desc: 'Selective state-space architecture implementation with fast PyTorch kernels',
-  },
-  {
-    title: '4-bit NormalFloat Quantization Engine',
-    arxiv: '2305.14314',
-    desc: 'QLoRA custom dequantization routines with memory-efficient backprop',
-  },
-  {
-    title: 'Graph Neural Network for Drug Discovery',
-    arxiv: '2106.05234',
-    desc: 'Message-passing molecular graph representation and property prediction',
-  },
-];
 
 export default function StudioWorkspace({
   currentMode,
@@ -60,26 +45,113 @@ export default function StudioWorkspace({
   const [hasORKey, setHasORKey] = useState(false);
   const [hasGHPat, setHasGHPat] = useState(false);
   const [selectedPreset, setSelectedPreset] = useState<string | null>(null);
+  const [selectedProfile, setSelectedProfile] = useState<'reasoning' | 'powerful' | 'balanced' | 'fast'>('balanced');
+  const [maxRounds, setMaxRounds] = useState(2);
+  const [activeTab, setActiveTab] = useState<'pipeline' | 'debate' | 'terminal' | 'code'>('pipeline');
+  const [selectedFile, setSelectedFile] = useState<string>('main.py');
 
-  useEffect(() => {
-    refreshKeyStatus();
+  // Workflow State tracking
+  const [workflowState, setWorkflowState] = useState<WorkflowState>({
+    stage: 'idle',
+    topicOrArxiv: '',
+    currentRound: 0,
+    maxRounds: 2,
+    consensusScore: 0,
+    debateTurns: [],
+    generatedFiles: {},
+    logs: [],
+    activeModel: 'openrouter/free',
+    status: 'idle',
+    fixAttempts: 0,
+    maxFixAttempts: 3,
+  });
+
+  const engineRef = useRef<WorkflowEngine | null>(null);
+
+  const bindEngineEvents = React.useCallback((engine: WorkflowEngine) => {
+    engine.on('state_change', (state: WorkflowState) => {
+      setWorkflowState({ ...state });
+      setSelectedFile((curr) => {
+        const fileNames = Object.keys(state.generatedFiles);
+        if (fileNames.length > 0 && !state.generatedFiles[curr]) {
+          return fileNames[0];
+        }
+        return curr;
+      });
+    });
   }, []);
 
-  const refreshKeyStatus = async () => {
+  const refreshKeyStatus = React.useCallback(async () => {
     try {
       const or = await keyStore.hasOpenRouterKey();
       const gh = await keyStore.hasGitHubPat();
       setHasORKey(or);
       setHasGHPat(gh);
+
+      const keys = await keyStore.getKeys();
+      if (keys.openRouterKey) {
+        const client = new OpenRouterClient({ apiKey: keys.openRouterKey });
+        engineRef.current = new WorkflowEngine({
+          client,
+          maxDebateRounds: maxRounds,
+          consensusThreshold: 0.8,
+        });
+        bindEngineEvents(engineRef.current);
+      }
     } catch {
       // ignore
     }
-  };
+  }, [maxRounds, bindEngineEvents]);
 
-  const handleSelectPreset = (preset: typeof PRESET_TOPICS[0]) => {
+  useEffect(() => {
+    refreshKeyStatus();
+  }, [refreshKeyStatus]);
+
+  const handleSelectPreset = (preset: PresetTopic) => {
     setSelectedPreset(preset.title);
     setTopic(`${preset.title} (arXiv:${preset.arxiv})`);
   };
+
+  const handleLaunch = async () => {
+    if (!topic.trim()) return;
+
+    try {
+      const keys = await keyStore.getKeys();
+      const client = new OpenRouterClient({ apiKey: keys.openRouterKey || '' });
+      const engine = new WorkflowEngine({
+        client,
+        maxDebateRounds: maxRounds,
+        consensusThreshold: 0.8,
+      });
+      engineRef.current = engine;
+      bindEngineEvents(engine);
+
+      // Auto-switch to pipeline or debate tab on launch
+      setActiveTab('pipeline');
+      await engine.execute(topic);
+    } catch (err) {
+      console.error('[StudioWorkspace] Launch error:', err);
+    }
+  };
+
+  const handlePauseResume = () => {
+    if (!engineRef.current) return;
+    if (workflowState.status === 'paused') {
+      engineRef.current.resume();
+    } else {
+      engineRef.current.pause();
+    }
+  };
+
+  const handleCancel = () => {
+    if (engineRef.current) {
+      engineRef.current.cancel();
+    }
+  };
+
+  const isRunning = workflowState.status === 'running' || workflowState.status === 'paused';
+  const isPaused = workflowState.status === 'paused';
+  const generatedFileNames = Object.keys(workflowState.generatedFiles);
 
   return (
     <div className="min-h-screen bg-[#030712] text-slate-100 flex flex-col font-sans selection:bg-cyan-500/30">
@@ -93,7 +165,7 @@ export default function StudioWorkspace({
 
       {/* Main Studio Body */}
       <div className="flex-1 max-w-7xl mx-auto w-full p-4 md:p-6 lg:p-8 space-y-6">
-        {/* BYOK Warning Banner if No Keys */}
+        {/* BYOK Banner if No Keys */}
         {!hasORKey && (
           <motion.div
             initial={{ opacity: 0, y: -10 }}
@@ -116,7 +188,7 @@ export default function StudioWorkspace({
             </div>
             <button
               onClick={() => setIsKeyModalOpen(true)}
-              className="px-4 py-2 text-xs font-semibold text-slate-950 bg-cyan-400 hover:bg-cyan-300 rounded-lg shadow-md shadow-cyan-500/20 shrink-0 transition-all"
+              className="px-4 py-2 text-xs font-semibold text-slate-950 bg-cyan-400 hover:bg-cyan-300 rounded-lg shadow-md shadow-cyan-500/20 shrink-0 transition-all font-orbitron"
             >
               Configure API Keys
             </button>
@@ -125,173 +197,189 @@ export default function StudioWorkspace({
 
         {/* Studio Workspace Grid */}
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-          {/* Left Column: Research Ingestion & Topic Config */}
+          {/* Left Column: Research Ingestion & Config Panel */}
           <div className="lg:col-span-5 space-y-6">
-            {/* Input Card */}
-            <div className="p-5 rounded-2xl bg-slate-900/60 border border-slate-800 shadow-xl space-y-4">
-              <div className="flex items-center space-x-2 text-cyan-400">
-                <BookOpen className="w-4 h-4" />
-                <h3 className="text-sm font-orbitron font-semibold text-white">
-                  Research Topic / arXiv Ingestion
-                </h3>
-              </div>
-
-              <div className="space-y-2">
-                <label className="text-xs text-slate-400">
-                  Enter research paper topic, idea, or arXiv ID:
-                </label>
-                <textarea
-                  value={topic}
-                  onChange={(e) => setTopic(e.target.value)}
-                  placeholder="e.g. Diffusion-based Reinforcement Learning for Robotic Control (arXiv:2403.01234)..."
-                  rows={4}
-                  className="w-full p-3 rounded-xl bg-slate-950/80 border border-slate-700/80 text-sm text-slate-100 placeholder-slate-600 focus:outline-none focus:border-cyan-400 font-sans transition-colors resize-none"
-                />
-              </div>
-
-              {/* Topic Presets */}
-              <div className="space-y-2">
-                <label className="text-xs font-semibold text-slate-400 uppercase tracking-wider">
-                  Quick-Start Research Presets:
-                </label>
-                <div className="grid grid-cols-1 gap-2">
-                  {PRESET_TOPICS.map((preset) => (
-                    <button
-                      key={preset.title}
-                      onClick={() => handleSelectPreset(preset)}
-                      className={`text-left p-2.5 rounded-xl border text-xs transition-all ${
-                        selectedPreset === preset.title
-                          ? 'bg-cyan-950/50 border-cyan-500/60 text-cyan-200'
-                          : 'bg-slate-950/40 border-slate-800/80 text-slate-400 hover:text-slate-200 hover:border-slate-700'
-                      }`}
-                    >
-                      <div className="font-semibold text-slate-200">{preset.title}</div>
-                      <div className="text-[11px] text-slate-500 mt-0.5">{preset.desc}</div>
-                    </button>
-                  ))}
-                </div>
-              </div>
-            </div>
-
-            {/* Free-Tier Model Routing Info Card */}
-            <div className="p-5 rounded-2xl bg-slate-900/60 border border-slate-800 shadow-xl space-y-3">
-              <div className="flex items-center space-x-2 text-purple-400">
-                <Cpu className="w-4 h-4" />
-                <h3 className="text-sm font-orbitron font-semibold text-white">
-                  Active Free-Tier Model Routing
-                </h3>
-              </div>
-              <p className="text-xs text-slate-400">
-                AutoGIT automatically cascades and load-balances across OpenRouter free-tier models with 429 exponential backoff:
-              </p>
-
-              <div className="space-y-2 text-xs font-mono">
-                <div className="flex items-center justify-between p-2 rounded-lg bg-slate-950/80 border border-slate-800">
-                  <span className="text-cyan-400 font-semibold">Qwen 2.5 Coder 32B :free</span>
-                  <span className="text-[10px] text-slate-400">Code Synthesis</span>
-                </div>
-                <div className="flex items-center justify-between p-2 rounded-lg bg-slate-950/80 border border-slate-800">
-                  <span className="text-purple-400 font-semibold">Llama 3.3 70B Instruct :free</span>
-                  <span className="text-[10px] text-slate-400">Debate & Architecture</span>
-                </div>
-                <div className="flex items-center justify-between p-2 rounded-lg bg-slate-950/80 border border-slate-800">
-                  <span className="text-emerald-400 font-semibold">Gemini 2.0 Flash :free</span>
-                  <span className="text-[10px] text-slate-400">Paper Analysis</span>
-                </div>
-                <div className="flex items-center justify-between p-2 rounded-lg bg-slate-950/80 border border-slate-800">
-                  <span className="text-amber-400 font-semibold">DeepSeek R1 :free</span>
-                  <span className="text-[10px] text-slate-400">Reasoning & Review</span>
-                </div>
-              </div>
-            </div>
+            <InputConfigPanel
+              topic={topic}
+              onTopicChange={(t) => {
+                setTopic(t);
+                setSelectedPreset(null);
+              }}
+              selectedPreset={selectedPreset}
+              onSelectPreset={handleSelectPreset}
+              selectedProfile={selectedProfile}
+              onSelectProfile={setSelectedProfile}
+              maxRounds={maxRounds}
+              onMaxRoundsChange={setMaxRounds}
+              isRunning={isRunning}
+              isPaused={isPaused}
+              hasOpenRouterKey={hasORKey}
+              onLaunch={handleLaunch}
+              onPauseResume={handlePauseResume}
+              onCancel={handleCancel}
+              onOpenKeyModal={() => setIsKeyModalOpen(true)}
+            />
           </div>
 
-          {/* Right Column: Workflow Pipeline Preview & Workspace Stage */}
-          <div className="lg:col-span-7 space-y-6">
-            {/* Pipeline Stage Visualizer Preview */}
-            <div className="p-6 rounded-2xl bg-gradient-to-b from-slate-900/80 to-slate-950/80 border border-cyan-500/20 shadow-xl space-y-6">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center space-x-2 text-cyan-400">
-                  <GitBranch className="w-5 h-5" />
-                  <h3 className="text-base font-orbitron font-semibold text-white">
-                    Autonomous 15-Stage Workflow Pipeline
-                  </h3>
-                </div>
-                <span className="text-xs px-2.5 py-1 rounded-full bg-cyan-950/80 border border-cyan-500/30 text-cyan-400 font-mono">
-                  State Machine Ready
+          {/* Right Column: Execution Workspace (DAG, Debate, Console, Code) */}
+          <div className="lg:col-span-7 space-y-4">
+            {/* Tab Navigation Header */}
+            <div className="flex items-center justify-between bg-slate-900/80 p-1.5 rounded-2xl border border-slate-800">
+              <div className="flex items-center space-x-1">
+                <button
+                  onClick={() => setActiveTab('pipeline')}
+                  className={`px-3.5 py-1.5 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-all ${
+                    activeTab === 'pipeline'
+                      ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 shadow-sm'
+                      : 'text-slate-400 hover:text-slate-200'
+                  }`}
+                >
+                  <GitBranch className="w-3.5 h-3.5" />
+                  <span>Pipeline DAG</span>
+                </button>
+
+                <button
+                  onClick={() => setActiveTab('debate')}
+                  className={`px-3.5 py-1.5 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-all ${
+                    activeTab === 'debate'
+                      ? 'bg-purple-500/20 text-purple-300 border border-purple-500/40 shadow-sm'
+                      : 'text-slate-400 hover:text-slate-200'
+                  }`}
+                >
+                  <MessageSquareCode className="w-3.5 h-3.5" />
+                  <span>Debate Panel</span>
+                  {workflowState.debateTurns.length > 0 && (
+                    <span className="px-1.5 py-0.2 rounded-full bg-purple-950 text-[10px] text-purple-300 border border-purple-500/30">
+                      {workflowState.debateTurns.length}
+                    </span>
+                  )}
+                </button>
+
+                <button
+                  onClick={() => setActiveTab('terminal')}
+                  className={`px-3.5 py-1.5 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-all ${
+                    activeTab === 'terminal'
+                      ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 shadow-sm'
+                      : 'text-slate-400 hover:text-slate-200'
+                  }`}
+                >
+                  <Terminal className="w-3.5 h-3.5" />
+                  <span>Streaming Logs</span>
+                  {workflowState.logs.length > 0 && (
+                    <span className="px-1.5 py-0.2 rounded-full bg-emerald-950 text-[10px] text-emerald-300 border border-emerald-500/30">
+                      {workflowState.logs.length}
+                    </span>
+                  )}
+                </button>
+
+                {generatedFileNames.length > 0 && (
+                  <button
+                    onClick={() => setActiveTab('code')}
+                    className={`px-3.5 py-1.5 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-all ${
+                      activeTab === 'code'
+                        ? 'bg-blue-500/20 text-blue-300 border border-blue-500/40 shadow-sm'
+                        : 'text-slate-400 hover:text-slate-200'
+                    }`}
+                  >
+                    <Code2 className="w-3.5 h-3.5" />
+                    <span>Files ({generatedFileNames.length})</span>
+                  </button>
+                )}
+              </div>
+
+              {/* Status Indicator */}
+              <div className="pr-2 text-[11px] font-mono flex items-center gap-1.5">
+                <span
+                  className={`w-2 h-2 rounded-full ${
+                    isRunning ? 'bg-cyan-400 animate-ping' : workflowState.status === 'completed' ? 'bg-emerald-400' : 'bg-slate-600'
+                  }`}
+                />
+                <span className="text-slate-400 uppercase text-[10px] font-bold">
+                  {workflowState.status}
                 </span>
               </div>
+            </div>
 
-              {/* Interactive Stage Overview */}
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-xs">
-                <div className="p-3.5 rounded-xl bg-slate-950/60 border border-slate-800 space-y-1.5">
-                  <div className="font-semibold text-cyan-300 flex items-center gap-1.5">
-                    <span className="w-5 h-5 rounded-full bg-cyan-500/20 flex items-center justify-center text-[10px] text-cyan-400 font-bold">
-                      1
+            {/* Active Tab View Body */}
+            <div>
+              {activeTab === 'pipeline' && (
+                <PipelineVisualizer
+                  currentStage={workflowState.stage}
+                  status={workflowState.status}
+                  errorMessage={workflowState.errorMessage}
+                  onSelectStage={(stage) => {
+                    if (stage === 'multi_agent_debate' || stage === 'consensus_check') {
+                      setActiveTab('debate');
+                    } else if (stage === 'code_generation' && generatedFileNames.length > 0) {
+                      setActiveTab('code');
+                    }
+                  }}
+                />
+              )}
+
+              {activeTab === 'debate' && (
+                <DebateStreamViewer
+                  debateTurns={workflowState.debateTurns}
+                  consensusScore={workflowState.consensusScore}
+                  currentRound={workflowState.currentRound}
+                  maxRounds={workflowState.maxRounds}
+                  isStreaming={isRunning}
+                />
+              )}
+
+              {activeTab === 'terminal' && (
+                <TerminalLogViewer
+                  logs={workflowState.logs}
+                  isStreaming={isRunning}
+                  onClearLogs={() => {
+                    setWorkflowState((prev) => ({ ...prev, logs: [] }));
+                  }}
+                />
+              )}
+
+              {activeTab === 'code' && (
+                <div className="p-5 rounded-2xl bg-slate-900/70 border border-slate-800 shadow-xl space-y-3">
+                  <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+                    <div className="flex items-center space-x-2">
+                      <FileCode className="w-4 h-4 text-blue-400" />
+                      <h4 className="text-xs font-orbitron font-semibold text-white">
+                        Synthesized Repository Files
+                      </h4>
+                    </div>
+                    <span className="text-[11px] font-mono text-slate-400">
+                      {generatedFileNames.length} Files Generated
                     </span>
-                    Research Discovery
                   </div>
-                  <p className="text-[11px] text-slate-400">
-                    arXiv ingestion, Atom XML parsing, and dynamic expert generation.
-                  </p>
-                </div>
 
-                <div className="p-3.5 rounded-xl bg-slate-950/60 border border-slate-800 space-y-1.5">
-                  <div className="font-semibold text-purple-300 flex items-center gap-1.5">
-                    <span className="w-5 h-5 rounded-full bg-purple-500/20 flex items-center justify-center text-[10px] text-purple-400 font-bold">
-                      2
-                    </span>
-                    Multi-Agent Debate
+                  {/* File Tabs */}
+                  <div className="flex items-center space-x-1.5 overflow-x-auto pb-1 scrollbar-none">
+                    {generatedFileNames.map((fileName) => (
+                      <button
+                        key={fileName}
+                        onClick={() => setSelectedFile(fileName)}
+                        className={`px-3 py-1 rounded-lg text-xs font-mono transition-colors ${
+                          selectedFile === fileName
+                            ? 'bg-blue-950/80 text-blue-300 border border-blue-500/40'
+                            : 'bg-slate-950/40 text-slate-400 hover:text-slate-200 border border-slate-800'
+                        }`}
+                      >
+                        {fileName}
+                      </button>
+                    ))}
                   </div>
-                  <p className="text-[11px] text-slate-400">
-                    6 expert personas, cross-critique matrix, and consensus scoring.
-                  </p>
-                </div>
 
-                <div className="p-3.5 rounded-xl bg-slate-950/60 border border-slate-800 space-y-1.5">
-                  <div className="font-semibold text-emerald-300 flex items-center gap-1.5">
-                    <span className="w-5 h-5 rounded-full bg-emerald-500/20 flex items-center justify-center text-[10px] text-emerald-400 font-bold">
-                      3
-                    </span>
-                    Code & GitHub Scaffolding
-                  </div>
-                  <p className="text-[11px] text-slate-400">
-                    Multi-file synthesis, AST validation, Git Data API commit, and .zip export.
-                  </p>
-                </div>
-              </div>
-
-              {/* Status Workspace Box */}
-              <div className="p-4 rounded-xl bg-slate-950/80 border border-slate-800/80 space-y-3 font-mono text-xs">
-                <div className="flex items-center justify-between text-slate-400 border-b border-slate-800 pb-2">
-                  <span className="flex items-center gap-1.5 text-cyan-300">
-                    <Terminal className="w-4 h-4" /> Live Execution Stream
-                  </span>
-                  <span className="text-[11px] text-emerald-400">Status: Client Runtime Initialized</span>
-                </div>
-                <div className="text-slate-400 space-y-1 text-[11px] py-1">
-                  <p className="text-slate-500">
-                    [system] AutoGIT Web Studio environment ready (Pure Client-Side BYOK mode).
-                  </p>
-                  <p className="text-slate-500">
-                    [security] WebCrypto AES-GCM key store loaded. Zero server secrets.
-                  </p>
-                  {hasORKey ? (
-                    <p className="text-emerald-400">
-                      [auth] OpenRouter API key detected. Free-tier routing enabled.
-                    </p>
+                  {/* File Code Display */}
+                  {workflowState.generatedFiles[selectedFile] ? (
+                    <div className="rounded-xl bg-[#020617] border border-slate-800 p-4 max-h-[380px] overflow-y-auto font-mono text-xs text-slate-300 leading-relaxed whitespace-pre scrollbar-thin scrollbar-thumb-slate-800">
+                      {workflowState.generatedFiles[selectedFile].content}
+                    </div>
                   ) : (
-                    <p className="text-amber-400">
-                      [auth] No OpenRouter API key configured. Click &apos;Configure API Keys&apos; to add one.
-                    </p>
-                  )}
-                  {hasGHPat && (
-                    <p className="text-purple-400">
-                      [github] GitHub PAT loaded for direct browser repository publishing.
-                    </p>
+                    <div className="p-8 text-center text-slate-500 text-xs">
+                      No file selected or files are currently generating...
+                    </div>
                   )}
                 </div>
-              </div>
+              )}
             </div>
           </div>
         </div>
