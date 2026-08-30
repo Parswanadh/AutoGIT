@@ -251,14 +251,22 @@ export async function fetchFreeModels(options?: {
     for (const item of json.data) {
       if (!item || typeof item.id !== 'string') continue;
 
-      const isPromptFree = item.pricing?.prompt === '0' || item.pricing?.prompt === 0;
-      const isCompletionFree = item.pricing?.completion === '0' || item.pricing?.completion === 0;
-      const isFreeTier = isFreeModel(item.id) || (isPromptFree && isCompletionFree);
+      const isPromptFree =
+        !item.pricing ||
+        item.pricing.prompt === undefined ||
+        item.pricing.prompt === '0' ||
+        item.pricing.prompt === 0;
+      const isCompletionFree =
+        !item.pricing ||
+        item.pricing.completion === undefined ||
+        item.pricing.completion === '0' ||
+        item.pricing.completion === 0;
 
-      if (isFreeTier) {
+      if (isFreeModel(item.id) && isPromptFree && isCompletionFree) {
+        const sanitizedId = item.id.trim();
         freeModels.push({
-          id: item.id,
-          name: item.name || item.id,
+          id: sanitizedId,
+          name: item.name || sanitizedId,
           contextLength: Number(item.context_length || item.top_provider?.context_length || 32768),
           isFree: true,
           description: item.description,

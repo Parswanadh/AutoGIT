@@ -172,38 +172,40 @@ export class OpenRouterClient implements IOpenRouterClient {
 
                 // Handle content tokens & parse <think> tags if embedded
                 if (delta.content) {
-                  let tokenContent = delta.content as string;
+                  let remaining = delta.content as string;
 
-                  // Check for <think> and </think> delimiters
-                  if (tokenContent.includes('<think>')) {
-                    inThinkTag = true;
-                    const parts = tokenContent.split('<think>');
-                    if (parts[0]) {
-                      fullContent += parts[0];
-                      callbacks?.onToken?.(parts[0]);
-                    }
-                    tokenContent = parts[1] || '';
-                  }
-
-                  if (inThinkTag) {
-                    if (tokenContent.includes('</think>')) {
-                      const parts = tokenContent.split('</think>');
-                      if (parts[0]) {
-                        fullReasoning += parts[0];
-                        callbacks?.onReasoning?.(parts[0]);
-                      }
-                      inThinkTag = false;
-                      if (parts[1]) {
-                        fullContent += parts[1];
-                        callbacks?.onToken?.(parts[1]);
+                  while (remaining.length > 0) {
+                    if (!inThinkTag) {
+                      const thinkIdx = remaining.indexOf('<think>');
+                      if (thinkIdx === -1) {
+                        fullContent += remaining;
+                        callbacks?.onToken?.(remaining);
+                        remaining = '';
+                      } else {
+                        const textBefore = remaining.slice(0, thinkIdx);
+                        if (textBefore.length > 0) {
+                          fullContent += textBefore;
+                          callbacks?.onToken?.(textBefore);
+                        }
+                        inThinkTag = true;
+                        remaining = remaining.slice(thinkIdx + 7);
                       }
                     } else {
-                      fullReasoning += tokenContent;
-                      callbacks?.onReasoning?.(tokenContent);
+                      const endThinkIdx = remaining.indexOf('</think>');
+                      if (endThinkIdx === -1) {
+                        fullReasoning += remaining;
+                        callbacks?.onReasoning?.(remaining);
+                        remaining = '';
+                      } else {
+                        const thoughtBefore = remaining.slice(0, endThinkIdx);
+                        if (thoughtBefore.length > 0) {
+                          fullReasoning += thoughtBefore;
+                          callbacks?.onReasoning?.(thoughtBefore);
+                        }
+                        inThinkTag = false;
+                        remaining = remaining.slice(endThinkIdx + 8);
+                      }
                     }
-                  } else {
-                    fullContent += tokenContent;
-                    callbacks?.onToken?.(tokenContent);
                   }
                 }
               }

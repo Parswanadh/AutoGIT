@@ -115,7 +115,7 @@ describe('Tier 3: Cross-Feature Pairwise Integrations', () => {
     const streamChunks = [
       ': keepalive\n\n',
       'data: {"choices":[{"delta":{"content":"<think>Verifying equation 4 from paper</think>"}}]}\n\n',
-      'data: {"choices":[{"delta":{"content":"import torch\nimport torch.nn as nn\n"}}]}\n\n',
+      'data: {"choices":[{"delta":{"content":"import torch\\nimport torch.nn as nn\\n"}}]}\n\n',
       'data: [DONE]\n\n',
     ];
 

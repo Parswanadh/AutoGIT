@@ -316,6 +316,55 @@ describe('OpenRouterClient', () => {
     expect(capturedReasoning).toContain('Internal plan');
   });
 
+  it('handles multiple and adjacent <think>...</think> blocks within a single chunk without dropping content', async () => {
+    const ssePayload = [
+      'data: {"choices":[{"delta":{"content":"<think>Plan 1</think><think>Plan 2</think>Middle <think>Plan 3</think>End"}}]}\n\n',
+      'data: [DONE]\n\n',
+    ].join('');
+
+    const encoder = new TextEncoder();
+    const stream = new ReadableStream({
+      start(controller) {
+        controller.enqueue(encoder.encode(ssePayload));
+        controller.close();
+      },
+    });
+
+    const mockResponse = new Response(stream, {
+      status: 200,
+      headers: { 'Content-Type': 'text/event-stream' },
+    });
+
+    const mockFetch = vi.fn().mockResolvedValue(mockResponse);
+
+    const testClient = new OpenRouterClient({
+      apiKey: 'sk-or-v1-test-token',
+      customFetch: mockFetch as unknown as typeof fetch,
+    });
+
+    let capturedReasoning = '';
+    const tokens: string[] = [];
+    const callbacks: StreamCallbacks = {
+      onReasoning: (r) => {
+        capturedReasoning += r;
+      },
+      onToken: (t) => {
+        tokens.push(t);
+      },
+    };
+
+    const messages: ChatMessage[] = [{ role: 'user', content: 'Test multi-think' }];
+    const result = await testClient.chatStream(
+      messages,
+      'deepseek/deepseek-r1:free',
+      callbacks
+    );
+
+    expect(result).toBe('Middle End');
+    expect(tokens.join('')).toBe('Middle End');
+    expect(capturedReasoning).toBe('Plan 1Plan 2Plan 3');
+  });
+
   it('auto-cascades to fallback free model when stream encounters 429', async () => {
     const failResponse = new Response(JSON.stringify({ error: { message: 'Rate limited', code: 429 } }), {
       status: 429,

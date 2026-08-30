@@ -7,8 +7,12 @@
 
 export const OPENROUTER_BASE_URL = 'https://openrouter.ai/api/v1' as const;
 
+export const FREE_MODEL_PATTERN = /^[a-zA-Z0-9_-]+\/[a-zA-Z0-9._-]+:free$/;
+
 /**
  * Checks if a model ID qualifies as a valid free-tier model.
+ * Enforces strict provider/model-slug:free format or openrouter/free meta-router.
+ * Rejects bare :free, /:free, whitespace, newlines, tabs, and injected whitespace.
  */
 export function isFreeModel(modelId: string | null | undefined): boolean {
   if (!modelId || typeof modelId !== 'string') {
@@ -18,7 +22,10 @@ export function isFreeModel(modelId: string | null | undefined): boolean {
   if (!trimmed) {
     return false;
   }
-  return trimmed.endsWith(':free') || trimmed === 'openrouter/free';
+  if (trimmed === 'openrouter/free') {
+    return true;
+  }
+  return FREE_MODEL_PATTERN.test(trimmed);
 }
 
 /**
@@ -37,7 +44,7 @@ export function assertFreeModel(modelId: string | null | undefined): void {
  */
 export function validateModelId(modelId: string): string {
   assertFreeModel(modelId);
-  return modelId;
+  return modelId.trim();
 }
 
 /**

@@ -32,6 +32,11 @@ describe('OpenRouter Security Guardrails', () => {
 
     const forbiddenPaidModels = [
       'openai/gpt-4o',
+      'openai/gpt-4o :free',
+      'openai/gpt-4o\n:free',
+      'openai/gpt-4o\r\n:free',
+      ':free',
+      '/:free',
       'openai/gpt-4-turbo',
       'anthropic/claude-3.5-sonnet',
       'anthropic/claude-3-opus',
@@ -40,8 +45,12 @@ describe('OpenRouter Security Guardrails', () => {
       'google/gemini-pro',
       'mistralai/mistral-large',
       'cohere/command-r-plus',
+      'openrouter/free-fake',
+      'fake-openrouter/free',
       '',
       '   ',
+      '\t',
+      '\n',
     ];
 
     it.each(validFreeModels)('accepts free-tier model: %s', (modelId) => {
@@ -49,6 +58,7 @@ describe('OpenRouter Security Guardrails', () => {
       expect(() => validateModelId(modelId)).not.toThrow();
       expect(() => assertFreeModel(modelId)).not.toThrow();
       expect(validateModelId(modelId)).toBe(modelId);
+      expect(validateModelId(`  ${modelId}  `)).toBe(modelId);
     });
 
     it.each(forbiddenPaidModels)('strictly blocks paid / invalid model: "%s"', (modelId) => {
