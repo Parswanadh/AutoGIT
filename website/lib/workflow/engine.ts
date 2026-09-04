@@ -72,6 +72,17 @@ export interface DebateTurn {
   verdict?: 'accept' | 'revise' | 'reject';
 }
 
+export interface WorkflowCheckpoint {
+  checkpointId: string;
+  stepIndex: number;
+  stage: WorkflowStage;
+  timestamp: number;
+  nodeName: string;
+  stateSnapshot: WorkflowState;
+  parentCheckpointId?: string;
+  diffSummary?: string;
+}
+
 export interface WorkflowState {
   stage: WorkflowStage;
   topicOrArxiv: string;
@@ -89,6 +100,9 @@ export interface WorkflowState {
   errorMessage?: string;
   fixAttempts: number;
   maxFixAttempts: number;
+  checkpointId?: string;
+  stepIndex?: number;
+  checkpoints?: WorkflowCheckpoint[];
 }
 
 export interface WorkflowEngineOptions {
@@ -108,6 +122,7 @@ export type WorkflowEventType =
   | 'log'
   | 'consensus_update'
   | 'state_change'
+  | 'checkpoint'
   | 'completed'
   | 'error';
 
@@ -123,6 +138,8 @@ export class WorkflowEngine {
   private listeners: Map<WorkflowEventType, Set<WorkflowEventListener>> = new Map();
   private isCancelled: boolean = false;
   private isPaused: boolean = false;
+  private checkpoints: WorkflowCheckpoint[] = [];
+  private currentStepIndex: number = 0;
 
   constructor(options?: WorkflowEngineOptions) {
     this.client = options?.client || new OpenRouterClient();
@@ -148,11 +165,104 @@ export class WorkflowEngine {
       status: 'idle',
       fixAttempts: 0,
       maxFixAttempts: this.maxFixAttempts,
+      stepIndex: 0,
+      checkpoints: [],
     };
   }
 
   public getState(): WorkflowState {
-    return { ...this.state };
+    return {
+      ...this.state,
+      checkpoints: [...this.checkpoints],
+    };
+  }
+
+  public createCheckpoint(nodeName: string, diffSummary?: string): WorkflowCheckpoint {
+    this.currentStepIndex++;
+    const parent = this.checkpoints.length > 0 ? this.checkpoints[this.checkpoints.length - 1] : undefined;
+    const checkpointId = `chk_${Date.now()}_s${this.currentStepIndex}_${nodeName}`;
+
+    // Deep clone state snapshot without circular references
+    const { checkpoints: _c, ...stateClean } = this.state;
+    const stateSnapshot: WorkflowState = JSON.parse(JSON.stringify(stateClean));
+    stateSnapshot.checkpointId = checkpointId;
+    stateSnapshot.stepIndex = this.currentStepIndex;
+
+    this.state.checkpointId = checkpointId;
+    this.state.stepIndex = this.currentStepIndex;
+
+    const checkpoint: WorkflowCheckpoint = {
+      checkpointId,
+      stepIndex: this.currentStepIndex,
+      stage: this.state.stage,
+      timestamp: Date.now(),
+      nodeName,
+      stateSnapshot,
+      parentCheckpointId: parent?.checkpointId,
+      diffSummary: diffSummary || `Stage ${this.state.stage} [${nodeName}] snapshot`,
+    };
+
+    this.checkpoints.push(checkpoint);
+    this.state.checkpoints = [...this.checkpoints];
+    this.emit('checkpoint', checkpoint);
+    return checkpoint;
+  }
+
+  public getCheckpoints(): WorkflowCheckpoint[] {
+    return [...this.checkpoints];
+  }
+
+  public getCheckpoint(checkpointId: string): WorkflowCheckpoint | undefined {
+    return this.checkpoints.find((c) => c.checkpointId === checkpointId);
+  }
+
+  public rollbackToCheckpoint(checkpointId: string): WorkflowState {
+    const target = this.checkpoints.find((c) => c.checkpointId === checkpointId);
+    if (!target) {
+      throw new Error(`Checkpoint [${checkpointId}] not found.`);
+    }
+
+    const idx = this.checkpoints.findIndex((c) => c.checkpointId === checkpointId);
+    this.checkpoints = this.checkpoints.slice(0, idx + 1);
+    this.currentStepIndex = target.stepIndex;
+
+    // Restore state from snapshot
+    this.state = JSON.parse(JSON.stringify(target.stateSnapshot));
+    this.state.checkpoints = [...this.checkpoints];
+    this.state.status = 'idle';
+
+    this.log('warn', `Rolled back to checkpoint ${checkpointId} (stage: ${target.stage}, step: ${target.stepIndex})`);
+    this.emit('stage_change', this.state.stage);
+    this.emit('state_change', this.getState());
+    return this.getState();
+  }
+
+  public exportStateSnapshot(): string {
+    return JSON.stringify(
+      {
+        version: '1.0',
+        timestamp: Date.now(),
+        state: this.state,
+        checkpoints: this.checkpoints,
+      },
+      null,
+      2
+    );
+  }
+
+  public loadStateSnapshot(jsonStr: string): WorkflowState {
+    const parsed = JSON.parse(jsonStr);
+    if (parsed.state) {
+      this.state = parsed.state;
+      this.checkpoints = parsed.checkpoints || [];
+      this.currentStepIndex = this.state.stepIndex || this.checkpoints.length;
+      this.state.checkpoints = [...this.checkpoints];
+      this.emit('state_change', this.getState());
+      this.emit('stage_change', this.state.stage);
+      this.log('info', `State snapshot successfully loaded (${this.checkpoints.length} checkpoints).`);
+      return this.getState();
+    }
+    throw new Error('Invalid state snapshot format.');
   }
 
   public subscribe(eventType: WorkflowEventType, listener: WorkflowEventListener): () => void {
@@ -205,6 +315,7 @@ export class WorkflowEngine {
 
   private setStage(stage: WorkflowStage): void {
     this.state.stage = stage;
+    this.createCheckpoint(stage, `Transitioned to stage: ${stage}`);
     this.emit('stage_change', stage);
     this.log('info', `Entered workflow stage: [${stage}]`);
   }
@@ -233,6 +344,8 @@ export class WorkflowEngine {
   public reset(): void {
     this.isCancelled = false;
     this.isPaused = false;
+    this.checkpoints = [];
+    this.currentStepIndex = 0;
     this.state = this.getInitialState();
     this.emit('state_change', this.getState());
   }

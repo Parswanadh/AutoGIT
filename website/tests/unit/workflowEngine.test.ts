@@ -523,6 +523,48 @@ class IncompleteModel:
       engine.cancel();
       expect(engine.getState().status).toBe('idle');
     });
+
+    it('4.5: creates checkpoints at every stage transition and supports time-travel rollback', async () => {
+      const checkpointsRecorded: any[] = [];
+      engine.on('checkpoint', (chk) => checkpointsRecorded.push(chk));
+
+      await engine.execute('Attention Mechanisms in Deep Learning');
+
+      const allCheckpoints = engine.getCheckpoints();
+      expect(allCheckpoints.length).toBeGreaterThanOrEqual(10);
+      expect(checkpointsRecorded.length).toBe(allCheckpoints.length);
+
+      // Verify each checkpoint contains deep snapshot and metadata
+      const firstChk = allCheckpoints[0];
+      expect(firstChk.checkpointId).toBeDefined();
+      expect(firstChk.stepIndex).toBe(1);
+      expect(firstChk.stage).toBe('research_discovery');
+      expect(firstChk.stateSnapshot.stage).toBe('research_discovery');
+
+      // Test time-travel rollback to an earlier checkpoint (e.g. step 3 problem_extraction)
+      const targetChk = allCheckpoints.find((c) => c.stage === 'problem_extraction') || allCheckpoints[2];
+      const rolledBackState = engine.rollbackToCheckpoint(targetChk.checkpointId);
+
+      expect(rolledBackState.stage).toBe(targetChk.stage);
+      expect(rolledBackState.stepIndex).toBe(targetChk.stepIndex);
+      expect(engine.getCheckpoints().length).toBe(targetChk.stepIndex);
+    });
+
+    it('4.6: supports exporting and rehydrating state snapshot with full checkpoint history', async () => {
+      await engine.execute('Sparse Mixture-of-Experts (MoE)');
+
+      const exportedJson = engine.exportStateSnapshot();
+      expect(typeof exportedJson).toBe('string');
+      expect(exportedJson).toContain('Sparse Mixture-of-Experts (MoE)');
+
+      // Rehydrate in a brand new engine
+      const freshEngine = new WorkflowEngine({ client });
+      expect(freshEngine.getState().stage).toBe('idle');
+
+      const loadedState = freshEngine.loadStateSnapshot(exportedJson);
+      expect(loadedState.topicOrArxiv).toBe('Sparse Mixture-of-Experts (MoE)');
+      expect(freshEngine.getCheckpoints().length).toBeGreaterThanOrEqual(10);
+    });
   });
 
   // ==========================================================================
