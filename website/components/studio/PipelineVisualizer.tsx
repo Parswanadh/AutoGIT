@@ -37,140 +37,165 @@ export interface StageNodeDef {
 }
 
 export const WORKFLOW_STAGES: StageNodeDef[] = [
+  // 1-3: Research Discovery Tier
+  {
+    id: 'requirements_extraction',
+    label: '1. Requirements Extraction',
+    shortLabel: 'Requirements',
+    icon: Search,
+    description: 'Deconstruct prompt goals, domain constraints & PyTorch targets',
+    group: 'discovery',
+  },
   {
     id: 'research_discovery',
-    label: 'arXiv Research Discovery',
+    label: '2. arXiv Research Discovery',
     shortLabel: 'Research',
     icon: BookOpen,
-    description: 'Fetch and parse arXiv Atom XML metadata & abstract',
+    description: 'Fetch & parse academic arXiv Atom XML metadata & abstract',
     group: 'discovery',
   },
   {
     id: 'perspectives_generation',
-    label: 'Perspectives Synthesis',
+    label: '3. Perspectives Synthesis',
     shortLabel: 'Perspectives',
     icon: Users,
-    description: 'Generate multi-domain persona questions',
+    description: 'Generate multi-domain persona questions across 6 roles',
     group: 'discovery',
   },
+
+  // 4-8: Debate & Consensus Tier
   {
     id: 'problem_extraction',
-    label: 'Problem Extraction',
+    label: '4. Problem Extraction',
     shortLabel: 'Problem',
     icon: Search,
-    description: 'Formulate core domain challenges & requirements',
-    group: 'discovery',
+    description: 'Formalize core domain challenges and verifiable requirements',
+    group: 'debate',
+  },
+  {
+    id: 'solution_generation',
+    label: '5. Solution Generation',
+    shortLabel: 'Solutions',
+    icon: Sparkles,
+    description: 'Synthesize 3 diverse architectural proposals for panel debate',
+    group: 'debate',
   },
   {
     id: 'multi_agent_debate',
-    label: '6-Persona Multi-Agent Debate',
+    label: '6. 6-Persona Multi-Agent Debate',
     shortLabel: 'Debate',
     icon: MessageSquareCode,
-    description: 'Turn-by-turn debate across 6 specialized personas',
+    description: 'Turn-by-turn debate across 6 specialized domain personas',
     group: 'debate',
   },
   {
     id: 'consensus_check',
-    label: 'Consensus Meter & Scoring',
+    label: '7. Consensus Meter & Scoring',
     shortLabel: 'Consensus',
     icon: CheckCheck,
-    description: 'Evaluate agreement convergence threshold',
+    description: 'Evaluate agreement convergence threshold (target: >= 0.80)',
     group: 'debate',
   },
   {
     id: 'solution_selection',
-    label: 'Solution Selection',
+    label: '8. Solution Selection',
     shortLabel: 'Selection',
     icon: Award,
-    description: 'Synthesize optimal winning architecture',
+    description: 'Synthesize optimal winning architecture specification',
     group: 'debate',
   },
+
+  // 9-10: Architecture & Code Synthesis Tier
   {
     id: 'architect_specification',
-    label: 'Architect Spec Blueprint',
+    label: '9. Architect Spec Blueprint',
     shortLabel: 'Architect',
     icon: Layers,
-    description: 'Generate file tree, class signatures & data flow',
+    description: 'Draft multi-file layout, module contracts & dependency tree',
     group: 'codegen',
   },
   {
     id: 'code_generation',
-    label: 'Autonomous Code Synthesis',
+    label: '10. Autonomous Code Synthesis',
     shortLabel: 'Code Gen',
     icon: Code,
-    description: 'Generate runnable Python files with zero stubs',
+    description: 'Stream full Python implementations without placeholders',
     group: 'codegen',
   },
+
+  // 11-16: Code Review, Testing & Self-Healing Tier
   {
     id: 'code_review',
-    label: 'AST & Semantic Review',
+    label: '11. AST & Semantic Review',
     shortLabel: 'Review',
     icon: ShieldAlert,
-    description: 'In-browser AST syntax and import verification',
+    description: 'Client-side AST syntax, bracket, and import validation',
     group: 'validation',
   },
   {
     id: 'code_testing',
-    label: 'Unit Test Verification',
+    label: '12. Unit Test Verification',
     shortLabel: 'Unit Tests',
     icon: TestTube,
-    description: 'Verify pytest suites and edge cases',
+    description: 'Synthesize and execute Pytest test cases & assertions',
     group: 'validation',
   },
   {
     id: 'feature_verification',
-    label: 'Feature Coverage Check',
+    label: '13. Feature Coverage Check',
     shortLabel: 'Features',
     icon: Sparkles,
-    description: 'Check runtime feature adherence vs requirements',
+    description: 'Verify runtime feature completeness vs paper claims',
     group: 'validation',
   },
   {
-    id: 'self_healing_fix',
-    label: 'Self-Healing Reflection',
-    shortLabel: 'Self-Heal',
+    id: 'strategy_reasoner',
+    label: '14. Strategy Reasoner',
+    shortLabel: 'Strategy',
     icon: Wrench,
-    description: 'Iterative strategy reasoner & auto-repair loop',
+    description: 'Analyze error tracebacks and formulate targeted fix diffs',
+    group: 'validation',
+  },
+  {
+    id: 'code_fixing',
+    label: '15. Self-Healing Code Fixing',
+    shortLabel: 'Code Fix',
+    icon: Wrench,
+    description: 'Apply AST-guided patches and automated syntax repair',
     group: 'validation',
   },
   {
     id: 'smoke_test',
-    label: 'Standalone Smoke Test',
+    label: '16. Standalone Smoke Test',
     shortLabel: 'Smoke Test',
     icon: Terminal,
-    description: 'Verify main.py entry point execution structure',
+    description: 'Verify main.py entry point execution & import health',
     group: 'validation',
   },
+
+  // 17-19: Evaluation & Publishing Tier
   {
     id: 'pipeline_self_eval',
-    label: 'Pipeline Self-Evaluation',
+    label: '17. Pipeline Self-Evaluation',
     shortLabel: 'Self-Eval',
     icon: Activity,
-    description: 'Holistic modularity, completeness and quality score',
+    description: 'Holistic score on code quality, modularity, and cleanliness',
     group: 'validation',
   },
   {
     id: 'goal_achievement_eval',
-    label: 'Goal Achievement Check',
+    label: '18. Goal Achievement Check',
     shortLabel: 'Goal Eval',
     icon: Target,
-    description: 'Validate 100% of user research goals satisfied',
+    description: 'Validate 100% of user research goals and metrics met',
     group: 'validation',
   },
   {
-    id: 'scaffolding',
-    label: 'Repository Scaffolding',
-    shortLabel: 'Scaffold',
-    icon: FolderArchive,
-    description: 'Scaffold README.md, requirements.txt & LICENSE',
-    group: 'publish',
-  },
-  {
     id: 'ready_to_publish',
-    label: 'Ready for GitHub Publishing',
-    shortLabel: 'Publish Ready',
+    label: '19. Git Publishing & Scaffolding',
+    shortLabel: 'Publish',
     icon: Rocket,
-    description: 'Atomic Git Data API commit & JSZip export ready',
+    description: 'Scaffold repository, bundle JSZip, and commit via Git Data API',
     group: 'publish',
   },
 ];
@@ -216,7 +241,7 @@ export default function PipelineVisualizer({
           <GitBranch className="w-5 h-5" />
           <div>
             <h3 className="text-sm font-orbitron font-semibold text-white">
-              Autonomous 15-Stage Workflow Pipeline
+              Autonomous 19-Node LangGraph Pipeline
             </h3>
             <p className="text-[11px] text-slate-400">
               Real-time state machine execution with self-healing feedback loops

@@ -346,23 +346,23 @@ describe('Milestone 3 Challenger Stress Tests: UI, High-Throughput Streaming & S
       expect(screen.getByText('125%')).toBeDefined();
     });
 
-    it('1.6: PipelineVisualizer calculates accurate progress across all 17 stages & states', () => {
+    it('1.6: PipelineVisualizer calculates accurate progress across all 19 stages & states', () => {
       const { rerender } = render(
         <PipelineVisualizer currentStage="idle" status="idle" />
       );
       expect(screen.getByText('0%')).toBeDefined();
 
-      // Research stage (stage index 0 -> 1/17 = 6%)
+      // Research stage (stage index 1 -> 2/19 = 11%)
       rerender(
         <PipelineVisualizer currentStage="research_discovery" status="running" />
       );
-      expect(screen.getByText('6%')).toBeDefined();
+      expect(screen.getByText('11%')).toBeDefined();
 
-      // Mid stage (code_generation, index 7 -> 8/17 = 47%)
+      // Mid stage (code_generation, index 9 -> 10/19 = 53%)
       rerender(
         <PipelineVisualizer currentStage="code_generation" status="running" />
       );
-      expect(screen.getByText('47%')).toBeDefined();
+      expect(screen.getByText('53%')).toBeDefined();
 
       // Completed status -> 100%
       rerender(
@@ -612,7 +612,7 @@ describe('Milestone 3 Challenger Stress Tests: UI, High-Throughput Streaming & S
 
       // Default active tab is pipeline DAG
       expect(screen.getByText('Pipeline DAG')).toBeDefined();
-      expect(screen.getByText('Autonomous 15-Stage Workflow Pipeline')).toBeDefined();
+      expect(screen.getByText(/Autonomous 19-Node LangGraph Pipeline/i)).toBeDefined();
 
       // Switch to Debate tab
       const debateTabBtn = screen.getByText('Debate Panel');

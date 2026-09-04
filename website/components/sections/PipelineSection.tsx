@@ -4,14 +4,25 @@ import { useState } from 'react';
 import { motion } from 'framer-motion';
 
 const pipelineNodes = [
-  { id: 'research', name: 'Research' },
-  { id: 'problem', name: 'Problem' },
-  { id: 'solution', name: 'Solution' },
-  { id: 'critique', name: 'Critique' },
-  { id: 'codegen', name: 'Code Gen' },
-  { id: 'review', name: 'Review' },
-  { id: 'test', name: 'Test' },
-  { id: 'publish', name: 'Publish' },
+  { id: 'requirements_extraction', name: '1. Requirements' },
+  { id: 'research', name: '2. arXiv Research' },
+  { id: 'generate_perspectives', name: '3. Perspectives' },
+  { id: 'problem_extraction', name: '4. Problem' },
+  { id: 'solution_generation', name: '5. Solutions' },
+  { id: 'critique', name: '6. Debate Panel' },
+  { id: 'consensus_check', name: '7. Consensus' },
+  { id: 'solution_selection', name: '8. Selection' },
+  { id: 'architect_spec', name: '9. Architect Spec' },
+  { id: 'code_generation', name: '10. Code Gen' },
+  { id: 'code_review_agent', name: '11. AST Review' },
+  { id: 'code_testing', name: '12. Unit Tests' },
+  { id: 'feature_verification', name: '13. Features' },
+  { id: 'strategy_reasoner', name: '14. Strategy' },
+  { id: 'code_fixing', name: '15. Self-Healing' },
+  { id: 'smoke_test', name: '16. Smoke Test' },
+  { id: 'pipeline_self_eval', name: '17. Self-Eval' },
+  { id: 'goal_achievement_eval', name: '18. Goal Eval' },
+  { id: 'git_publishing', name: '19. Git Publish' },
 ];
 
 export default function PipelineSection() {
@@ -19,13 +30,9 @@ export default function PipelineSection() {
 
   const play = () => {
     setActiveNode(0);
-    setTimeout(() => setActiveNode(1), 500);
-    setTimeout(() => setActiveNode(2), 1000);
-    setTimeout(() => setActiveNode(3), 1500);
-    setTimeout(() => setActiveNode(4), 2000);
-    setTimeout(() => setActiveNode(5), 2500);
-    setTimeout(() => setActiveNode(6), 3000);
-    setTimeout(() => setActiveNode(7), 3500);
+    for (let i = 1; i < pipelineNodes.length; i++) {
+      setTimeout(() => setActiveNode(i), i * 200);
+    }
   };
 
   return (
@@ -39,7 +46,7 @@ export default function PipelineSection() {
           viewport={{ once: true, margin: '-100px' }}
           transition={{ duration: 0.6 }}
         >
-          Pipeline Architecture
+          19-Node LangGraph Architecture
         </motion.h2>
 
         {/* Enhanced play button with hover effects */}
@@ -56,7 +63,7 @@ export default function PipelineSection() {
             boxShadow: '0 4px 20px rgba(0, 212, 255, 0.3)'
           }}
         >
-          <span className="relative z-10">Play Pipeline</span>
+          <span className="relative z-10">Play 19-Node Pipeline</span>
           {/* Shine effect on hover */}
           <motion.div
             className="absolute inset-0 bg-gradient-to-r from-transparent via-white to-transparent opacity-0 group-hover:opacity-20"
@@ -67,7 +74,7 @@ export default function PipelineSection() {
         </motion.button>
 
         {/* Pipeline nodes with staggered animations */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 justify-center">
+        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3.5 justify-center">
           {pipelineNodes.map((node, i) => (
             <motion.div
               key={node.id}

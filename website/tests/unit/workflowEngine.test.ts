@@ -606,7 +606,7 @@ class IncompleteModel:
       expect(onLaunch).toHaveBeenCalledTimes(1);
     });
 
-    it('5.2: PipelineVisualizer renders 17 DAG nodes with active status styling', () => {
+    it('5.2: PipelineVisualizer renders 19 LangGraph nodes with active status styling', () => {
       render(
         React.createElement(PipelineVisualizer, {
           currentStage: 'code_generation',
@@ -614,7 +614,7 @@ class IncompleteModel:
         })
       );
 
-      expect(screen.getByText('Autonomous 15-Stage Workflow Pipeline')).toBeDefined();
+      expect(screen.getByText('Autonomous 19-Node LangGraph Pipeline')).toBeDefined();
       expect(screen.getByText('Code Gen')).toBeDefined();
       expect(screen.getByText('Research')).toBeDefined();
     });

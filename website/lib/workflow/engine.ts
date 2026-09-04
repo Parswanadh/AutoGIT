@@ -26,9 +26,11 @@ import {
 
 export type WorkflowStage =
   | 'idle'
+  | 'requirements_extraction'
   | 'research_discovery'
   | 'perspectives_generation'
   | 'problem_extraction'
+  | 'solution_generation'
   | 'multi_agent_debate'
   | 'consensus_check'
   | 'solution_selection'
@@ -37,12 +39,15 @@ export type WorkflowStage =
   | 'code_review'
   | 'code_testing'
   | 'feature_verification'
+  | 'strategy_reasoner'
+  | 'code_fixing'
   | 'self_healing_fix'
   | 'smoke_test'
   | 'pipeline_self_eval'
   | 'goal_achievement_eval'
   | 'scaffolding'
   | 'ready_to_publish'
+  | 'git_publishing'
   | 'published'
   | 'error';
 

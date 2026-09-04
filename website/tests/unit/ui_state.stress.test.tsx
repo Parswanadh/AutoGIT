@@ -75,7 +75,7 @@ describe('Milestone 1 Empirical Stress Test: UI, State & Storage Isolation', () 
       });
 
       expect(screen.getByText(/Research Topic \/ arXiv Ingestion/i)).toBeDefined();
-      expect(screen.getByText(/Autonomous 15-Stage Workflow Pipeline/i)).toBeDefined();
+      expect(screen.getByText(/Autonomous 19-Node LangGraph Pipeline/i)).toBeDefined();
     });
 
     it('HomePage switches smoothly between Studio and Showcase modes', async () => {
