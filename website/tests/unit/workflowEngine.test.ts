@@ -55,7 +55,16 @@ class MockWorkflowClient implements IOpenRouterClient {
 
     let text = this.defaultResponse;
 
-    if (userPrompt.includes('perspectives and critical technical questions')) {
+    if (userPrompt.includes('Lead Research Ingestion Specialist')) {
+      text = JSON.stringify({
+        title: 'Selective State-Space Mamba',
+        domain: 'Machine Learning',
+        core_algorithms: ['Selective Scan', 'State-Space Discretization'],
+        technical_requirements: ['Modular Python architecture', 'Runnable standalone main.py demo'],
+        constraints: ['Zero-dependency fallbacks', 'Pytest suite included'],
+        success_metrics: ['O(N) memory scaling', '100% unit test pass'],
+      });
+    } else if (userPrompt.includes('perspectives and critical technical questions')) {
       text = JSON.stringify({
         perspectives: [
           { persona: 'Lead Researcher', core_question: 'What is the theoretical fidelity?', key_priorities: ['math'] },
@@ -486,17 +495,24 @@ class IncompleteModel:
       expect(finalState.stage).toBe('ready_to_publish');
 
       // Verify essential stage sequence
+      expect(stageChanges).toContain('requirements_extraction');
       expect(stageChanges).toContain('research_discovery');
       expect(stageChanges).toContain('perspectives_generation');
       expect(stageChanges).toContain('problem_extraction');
+      expect(stageChanges).toContain('solution_generation');
       expect(stageChanges).toContain('multi_agent_debate');
       expect(stageChanges).toContain('consensus_check');
       expect(stageChanges).toContain('solution_selection');
       expect(stageChanges).toContain('architect_specification');
       expect(stageChanges).toContain('code_generation');
       expect(stageChanges).toContain('code_review');
+      expect(stageChanges).toContain('code_testing');
+      expect(stageChanges).toContain('feature_verification');
+      expect(stageChanges).toContain('strategy_reasoner');
+      expect(stageChanges).toContain('code_fixing');
       expect(stageChanges).toContain('smoke_test');
-      expect(stageChanges).toContain('scaffolding');
+      expect(stageChanges).toContain('pipeline_self_eval');
+      expect(stageChanges).toContain('goal_achievement_eval');
       expect(stageChanges).toContain('ready_to_publish');
 
       // Verify generated files
@@ -538,8 +554,8 @@ class IncompleteModel:
       const firstChk = allCheckpoints[0];
       expect(firstChk.checkpointId).toBeDefined();
       expect(firstChk.stepIndex).toBe(1);
-      expect(firstChk.stage).toBe('research_discovery');
-      expect(firstChk.stateSnapshot.stage).toBe('research_discovery');
+      expect(firstChk.stage).toBe('requirements_extraction');
+      expect(firstChk.stateSnapshot.stage).toBe('requirements_extraction');
 
       // Test time-travel rollback to an earlier checkpoint (e.g. step 3 problem_extraction)
       const targetChk = allCheckpoints.find((c) => c.stage === 'problem_extraction') || allCheckpoints[2];

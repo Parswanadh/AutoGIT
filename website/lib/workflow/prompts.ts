@@ -111,6 +111,31 @@ export const PERSONA_LIST = Object.values(PERSONAS);
 // ============================================================================
 
 /**
+ * 0. Requirements Extraction
+ */
+export function formatRequirementsExtractionPrompt(topicOrArxiv: string): string {
+  return `You are the Lead Research Ingestion Specialist. Analyze the following topic or arXiv paper reference:
+
+INPUT:
+${topicOrArxiv}
+
+Task: Extract structured technical requirements, algorithmic scope, target domain, key mathematical objects, constraints, and success criteria.
+
+Return ONLY a valid JSON object with the following structure:
+{
+  "title": "Clear concise project title",
+  "domain": "e.g. Computer Vision / NLP / Reinforcement Learning / Systems",
+  "core_algorithms": ["algorithm 1", "algorithm 2"],
+  "technical_requirements": [
+    "Requirement 1: description",
+    "Requirement 2: description"
+  ],
+  "constraints": ["Zero-dependency fallbacks", "Pytest suite included"],
+  "success_metrics": ["Metric 1", "Metric 2"]
+}`;
+}
+
+/**
  * 1. Perspectives Generation
  */
 export function formatPerspectivesPrompt(topicOrSummary: string): string {
