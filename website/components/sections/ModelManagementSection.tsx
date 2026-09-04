@@ -6,43 +6,43 @@ import { useRef } from 'react';
 const tiers = [
   {
     tier: 1,
-    name: 'OpenRouter FREE',
-    models: ['Qwen3-Coder 480B (free)', 'Trinity-Large 400B (free)'],
-    status: '429 Rate Limited → Response received ✓',
+    name: 'OpenRouter Free Meta-Router',
+    models: ['openrouter/free (Auto Load-Balanced)', 'Dynamic Health Monitoring'],
+    status: 'Zero Cost • Auto Model Selection ✓',
     color: '#10B981',
-    desc: 'Try free models first',
+    desc: 'Universal free meta-routing across all active free models',
   },
   {
     tier: 2,
-    name: 'OpenRouter PAID',
-    models: ['DeepSeek Chat v3 — $0.07/1M', 'Gemini 2.5 Flash — $0.10/1M'],
-    status: 'Low-cost fallback',
+    name: 'Free Deep Reasoning Tier',
+    models: ['deepseek/deepseek-r1:free', 'nvidia/nemotron-3-super-120b-a12b:free'],
+    status: 'Zero Cost • Chain-of-Thought ✓',
     color: '#3B82F6',
-    desc: 'Cheap premium models',
+    desc: 'Deep multi-perspective debate and strategic architectural critique',
   },
   {
     tier: 3,
-    name: 'Groq Multi-Key Pool',
-    models: ['Up to 8 independent API keys', 'Each with own rate limit'],
-    status: 'Key 1: 429 ✗ Key 2: 429 ✗ Key 3: OK ✓',
+    name: 'Free High-Performance Coding',
+    models: ['qwen/qwen-2.5-coder-32b-instruct:free', 'minimax/minimax-m2.7:free'],
+    status: 'Zero Cost • Multi-File Synthesis ✓',
     color: '#F59E0B',
-    desc: 'Parallel key rotation',
+    desc: 'Full-stack repository code generation and test scaffolding',
   },
   {
     tier: 4,
-    name: 'OpenAI gpt-4o-mini',
-    models: ['Always available cloud model'],
-    status: 'Last cloud resort',
+    name: 'Free Balanced Architecture',
+    models: ['meta-llama/llama-3.3-70b-instruct:free', 'z-ai/glm-5.2:free'],
+    status: 'Zero Cost • Long Context ✓',
     color: '#7C3AED',
-    desc: 'Guaranteed availability',
+    desc: 'Requirements extraction and problem formulation',
   },
   {
     tier: 5,
-    name: 'Ollama Local',
-    models: ['Run on your own GPU'],
-    status: '$0, offline capable',
-    color: '#EF4444',
-    desc: 'Fully offline fallback',
+    name: 'Free Ultra-Fast Processing',
+    models: ['inclusionai/ling-3.0-flash-fin:free', 'liquid/lfm-2.5-2.6b:free'],
+    status: 'Zero Cost • Low Latency ✓',
+    color: '#06B6D4',
+    desc: 'Instant regex/AST normalization and token stream parsing',
   },
 ];
 
@@ -50,65 +50,57 @@ const profiles = [
   {
     name: 'fast',
     usage: 'Extraction, simple parsing',
-    models: 'Small 3B-30B models',
-    why: 'Speed over quality',
+    models: 'inclusionai/ling-3.0-flash-fin:free',
+    why: 'Ultra-fast token streaming',
     icon: '⚡',
     color: '#F59E0B',
   },
   {
     name: 'balanced',
     usage: 'Problem extraction, debate',
-    models: '70B (Llama 3.3)',
-    why: 'Good balance',
+    models: 'meta-llama/llama-3.3-70b-instruct:free',
+    why: 'Reliable general synthesis',
     icon: '⚖️',
     color: '#3B82F6',
   },
   {
     name: 'powerful',
     usage: 'Code generation, review',
-    models: '400B-480B (Qwen3-Coder, Trinity)',
-    why: 'Maximum quality',
+    models: 'qwen/qwen-2.5-coder-32b-instruct:free',
+    why: 'Top-tier code generation',
     icon: '🚀',
     color: '#7C3AED',
   },
   {
     name: 'reasoning',
     usage: 'Critique, strategy, root-cause',
-    models: 'DeepSeek R1',
-    why: 'Deep thinking',
+    models: 'deepseek/deepseek-r1:free',
+    why: 'Explicit chain-of-thought',
     icon: '🧠',
     color: '#10B981',
-  },
-  {
-    name: 'research',
-    usage: 'Web search + synthesis',
-    models: 'Groq compound-beta',
-    why: 'Built-in web search',
-    icon: '🔍',
-    color: '#00D4FF',
   },
 ];
 
 const smartFeatures = [
   {
-    title: 'Health Cache',
-    desc: 'Dead models (404) permanently blacklisted. Rate-limited models (429) get 60-second cooldown.',
+    title: 'ModelHealthCache',
+    desc: 'Decommissioned models (404/policy) blacklisted. Rate-limited models (429) receive exponential cooldowns.',
     icon: '💊',
   },
   {
-    title: 'Per-Model Timeouts',
-    desc: 'DeepSeek R1 gets 300s (slow but smart). Flash models get 25s. Based on real latency data.',
-    icon: '⏱️',
+    title: '100% Free Tier Guardrails',
+    desc: 'Strict regex enforcement rejects any model not ending in :free or openrouter/free. $0 cost verified per call.',
+    icon: '🛡️',
   },
   {
-    title: 'Multi-Key Pool',
-    desc: '5-8 Groq API keys rotating. A rate limit on Key 1 doesn\'t block Key 2.',
-    icon: '🔑',
+    title: 'Client-Side Cascading Failover',
+    desc: 'Zero-downtime execution automatically transitions to healthy free backup models upon rate limits or outages.',
+    icon: '🔄',
   },
   {
-    title: 'Token Tracking',
-    desc: 'Every LLM call logged — prompt tokens, completion tokens, total cost tracked per run.',
-    icon: '📊',
+    title: 'Zero Local LLM Dependencies',
+    desc: 'Runs purely in browser with BYOK keys. No local Ollama, no GPUs, and no Python backend server needed.',
+    icon: '🌐',
   },
 ];
 
@@ -184,12 +176,12 @@ export default function ModelManagementSection() {
         <motion.h3
           initial={{ opacity: 0 }}
           animate={isInView ? { opacity: 1 } : {}}
-          transition={{ delay: 0.8 }}
+          transition={{ duration: 0.6, delay: 0.8 }}
           className="font-orbitron font-semibold text-xl text-center mb-8 text-white"
         >
-          5 Model Profiles
+          4 Free Model Routing Profiles
         </motion.h3>
-        <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-16">
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-16">
           {profiles.map((p, i) => (
             <motion.div
               key={p.name}
