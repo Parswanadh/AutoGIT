@@ -256,11 +256,9 @@ export class OpenRouterClient implements IOpenRouterClient {
 
         const payload = {
           model: modelId,
-          models: candidates,
           messages,
           stream: true,
           include_reasoning: true,
-          route: 'fallback',
         };
 
         const res = await this.fetchImpl(endpoint, {
@@ -314,11 +312,9 @@ export class OpenRouterClient implements IOpenRouterClient {
 
         const payload = {
           model: modelId,
-          models: candidates,
           messages,
           stream: false,
           include_reasoning: true,
-          route: 'fallback',
         };
 
         const res = await this.fetchImpl(endpoint, {

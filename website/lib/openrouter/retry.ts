@@ -125,6 +125,15 @@ export async function executeWithCascade<T>(
         const statusCode = err?.status ?? err?.statusCode ?? (err?.message?.includes('429') ? 429 : 0);
         const errMsg = String(err?.message || err);
 
+        if (
+          statusCode === 401 ||
+          errMsg.includes('401') ||
+          errMsg.toLowerCase().includes('invalid api key') ||
+          errMsg.toLowerCase().includes('unauthorized')
+        ) {
+          throw err;
+        }
+
         if (statusCode === 429 || errMsg.includes('429') || errMsg.toLowerCase().includes('rate limit')) {
           cache.recordRateLimit(currentModel);
           if (options?.onFallback && currentModel !== nextCandidate) {
@@ -133,20 +142,49 @@ export async function executeWithCascade<T>(
           continue;
         }
 
+        const isPolicyOrGuardrail =
+          errMsg.toLowerCase().includes('guardrail') ||
+          errMsg.toLowerCase().includes('data policy') ||
+          errMsg.toLowerCase().includes('data retention') ||
+          errMsg.toLowerCase().includes('privacy') ||
+          errMsg.toLowerCase().includes('consent') ||
+          errMsg.toLowerCase().includes('no endpoints available') ||
+          errMsg.toLowerCase().includes('no endpoints found') ||
+          errMsg.toLowerCase().includes('not a valid model') ||
+          errMsg.toLowerCase().includes('decommissioned');
+
         if (
           statusCode === 404 ||
+          statusCode === 403 ||
+          (statusCode === 400 && isPolicyOrGuardrail) ||
           errMsg.includes('404') ||
-          errMsg.includes('not a valid model ID') ||
-          errMsg.includes('decommissioned')
+          errMsg.includes('403') ||
+          isPolicyOrGuardrail
         ) {
           cache.recordPermanentFailure(currentModel, errMsg);
           if (options?.onFallback && currentModel !== nextCandidate) {
-            options.onFallback(currentModel, nextCandidate, 'Model unavailable/decommissioned');
+            options.onFallback(
+              currentModel,
+              nextCandidate,
+              isPolicyOrGuardrail
+                ? 'Guardrail / account data policy restriction'
+                : 'Model unavailable/decommissioned'
+            );
           }
           continue;
         }
 
-        if (statusCode >= 500 || errMsg.includes('500') || errMsg.includes('503')) {
+        if (
+          statusCode >= 500 ||
+          statusCode === 408 ||
+          errMsg.includes('500') ||
+          errMsg.includes('502') ||
+          errMsg.includes('503') ||
+          errMsg.includes('504') ||
+          errMsg.toLowerCase().includes('timeout') ||
+          errMsg.toLowerCase().includes('temporarily unavailable') ||
+          errMsg.toLowerCase().includes('overloaded')
+        ) {
           cache.recordRateLimit(currentModel, 10000);
           if (options?.onFallback && currentModel !== nextCandidate) {
             options.onFallback(currentModel, nextCandidate, 'Provider temporary outage');
@@ -154,7 +192,16 @@ export async function executeWithCascade<T>(
           continue;
         }
 
-        // For other unexpected errors, propagate
+        // If another model-specific error occurs (e.g. 400 with model parameter issue) and we have backup candidates, cascade
+        if (i < activeCandidates.length - 1) {
+          cache.recordPermanentFailure(currentModel, errMsg);
+          if (options?.onFallback && currentModel !== nextCandidate) {
+            options.onFallback(currentModel, nextCandidate, `Model-specific error (${statusCode || 'unknown'})`);
+          }
+          continue;
+        }
+
+        // For other unexpected errors on the last candidate, propagate
         throw err;
       }
     }

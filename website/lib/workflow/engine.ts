@@ -442,7 +442,7 @@ export class WorkflowEngine {
       const reqPrompt = formatRequirementsExtractionPrompt(this.state.topicOrArxiv);
       const reqRaw = await this.client.chatStream(
         [{ role: 'user', content: reqPrompt }],
-        this.preferredModel || 'google/gemini-2.0-flash-exp:free',
+        this.preferredModel || 'openrouter/free',
         {
           onToken: (token) => this.emit('token', { token, stage: 'requirements_extraction' }),
           onReasoning: (thought) => this.emit('reasoning', { thought, stage: 'requirements_extraction' }),
@@ -488,7 +488,7 @@ export class WorkflowEngine {
 
       const perspectivesRaw = await this.client.chatStream(
         [{ role: 'user', content: perspectivesPrompt }],
-        this.preferredModel || 'google/gemini-2.0-flash-exp:free',
+        this.preferredModel || 'openrouter/free',
         {
           onToken: (token) => this.emit('token', { token, stage: 'perspectives_generation' }),
           onReasoning: (thought) => this.emit('reasoning', { thought, stage: 'perspectives_generation' }),
@@ -507,7 +507,7 @@ export class WorkflowEngine {
       const problemPrompt = formatProblemExtractionPrompt(researchContext.synthesizedSummary);
       const problemRaw = await this.client.chatStream(
         [{ role: 'user', content: problemPrompt }],
-        this.preferredModel || 'google/gemini-2.0-flash-exp:free',
+        this.preferredModel || 'openrouter/free',
         {
           onToken: (token) => this.emit('token', { token, stage: 'problem_extraction' }),
           onReasoning: (thought) => this.emit('reasoning', { thought, stage: 'problem_extraction' }),
@@ -904,7 +904,7 @@ export class WorkflowEngine {
 
       const scaffoldingRaw = await this.client.chatStream(
         [{ role: 'user', content: scaffoldingPrompt }],
-        this.preferredModel || 'google/gemini-2.0-flash-exp:free',
+        this.preferredModel || 'openrouter/free',
         {
           onToken: (token) => this.emit('token', { token, stage: 'ready_to_publish' }),
           onReasoning: (thought) => this.emit('reasoning', { thought, stage: 'ready_to_publish' }),

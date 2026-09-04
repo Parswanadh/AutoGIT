@@ -161,6 +161,56 @@ describe('ModelHealthCache & Fallback Cascades', () => {
     expect(cache.isHealthy('primary:free')).toBe(false);
     expect(cache.isHealthy('secondary:free')).toBe(true);
   });
+
+  it('fails fast on HTTP 401 Unauthorized without cycling through fallbacks', async () => {
+    const attemptLog: string[] = [];
+    const requestFn = vi.fn().mockImplementation(async (modelId: string) => {
+      attemptLog.push(modelId);
+      const error = new Error('Invalid API key provided');
+      (error as any).status = 401;
+      throw error;
+    });
+
+    await expect(
+      executeWithCascade(['model-a:free', 'model-b:free', 'openrouter/free'], requestFn, {
+        healthCache: cache,
+        sleepFn: vi.fn(),
+      })
+    ).rejects.toThrow('Invalid API key provided');
+
+    expect(attemptLog).toEqual(['model-a:free']);
+  });
+
+  it('cascades to fallback when encountering guardrail or data policy restrictions', async () => {
+    const fallbackEvents: Array<{ from: string; to: string; reason: string }> = [];
+    const attemptLog: string[] = [];
+
+    const requestFn = vi.fn().mockImplementation(async (modelId: string) => {
+      attemptLog.push(modelId);
+      if (modelId === 'restricted:free') {
+        const error = new Error('OpenRouter API error (status 400): No endpoints available matching your guardrail restrictions.');
+        (error as any).status = 400;
+        throw error;
+      }
+      return `Success from ${modelId}`;
+    });
+
+    const result = await executeWithCascade(
+      ['restricted:free', 'allowed:free'],
+      requestFn,
+      {
+        healthCache: cache,
+        onFallback: (from, to, reason) => fallbackEvents.push({ from, to, reason }),
+        sleepFn: vi.fn(),
+      }
+    );
+
+    expect(result).toBe('Success from allowed:free');
+    expect(attemptLog).toEqual(['restricted:free', 'allowed:free']);
+    expect(fallbackEvents.length).toBe(1);
+    expect(fallbackEvents[0].reason).toContain('Guardrail / account data policy');
+    expect(cache.isHealthy('restricted:free')).toBe(false);
+  });
 });
 
 describe('OpenRouterClient', () => {
@@ -212,6 +262,8 @@ describe('OpenRouterClient', () => {
     const parsedBody = JSON.parse(reqInit.body);
     expect(parsedBody.model).toBe('nvidia/nemotron-3-super-120b-a12b:free');
     expect(parsedBody.stream).toBe(false);
+    expect(parsedBody.models).toBeUndefined();
+    expect(parsedBody.route).toBeUndefined();
   });
 
   it('parses SSE stream chunks, ignores keepalive comments, and extracts reasoning tokens', async () => {
@@ -270,6 +322,11 @@ describe('OpenRouterClient', () => {
     expect(reasoningChunks.join('')).toBe('Thinking about password logic...');
     expect(completedContent).toBe('import secrets\ndef get_pass(): return secrets.token_hex(16)');
     expect(completedReasoning).toBe('Thinking about password logic...');
+    const [, streamReqInit] = mockFetch.mock.calls[0];
+    const streamBody = JSON.parse(streamReqInit.body);
+    expect(streamBody.model).toBe('nvidia/nemotron-3-super-120b-a12b:free');
+    expect(streamBody.models).toBeUndefined();
+    expect(streamBody.route).toBeUndefined();
   });
 
   it('handles embedded <think>...</think> blocks within content stream', async () => {
