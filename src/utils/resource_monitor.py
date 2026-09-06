@@ -101,9 +101,11 @@ class ResourceMonitor:
                 }
         except Exception:
             pass
-        # Fallback to raw pynvml — also guarded against OSError / access violation
         try:
-            import pynvml
+            import warnings
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore", category=FutureWarning)
+                import pynvml
             pynvml.nvmlInit()
             handle = pynvml.nvmlDeviceGetHandleByIndex(0)
             info = pynvml.nvmlDeviceGetMemoryInfo(handle)

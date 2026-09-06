@@ -4,6 +4,12 @@
  * import resolution, stub detection, and cross-file reference validation with zero server dependencies.
  */
 
+export interface ImportedSymbolRef {
+  module: string;
+  symbol: string;
+  line: number;
+}
+
 export interface CodeMetricInfo {
   totalLines: number;
   codeLines: number;
@@ -14,6 +20,9 @@ export interface CodeMetricInfo {
   hasStubs: boolean;
   importedModules: string[];
   definedSymbols: string[];
+  docstringsCount?: number;
+  assertionsCount?: number;
+  importedSymbols?: ImportedSymbolRef[];
 }
 
 export interface ValidationError {
@@ -45,6 +54,12 @@ export interface ProjectValidationResult {
     validFilesCount: number;
     hasMainEntry: boolean;
     hasTestSuite: boolean;
+    totalClasses?: number;
+    totalFunctions?: number;
+    totalDocstrings?: number;
+    docstringCoverage?: number;
+    totalAssertions?: number;
+    stubsCount?: number;
   };
 }
 
@@ -126,9 +141,12 @@ export class PythonAstValidator {
     let commentLines = 0;
     let hasStubs = false;
     let hasMainBlock = false;
+    let docstringsCount = 0;
+    let assertionsCount = 0;
 
     const importedModules: Set<string> = new Set();
     const definedSymbols: Set<string> = new Set();
+    const importedSymbolsList: ImportedSymbolRef[] = [];
     const classes: Array<{ name: string; methods: string[]; docstring?: string }> = [];
     const functions: Array<{ name: string; params: string[]; docstring?: string }> = [];
 
@@ -356,7 +374,15 @@ export class PythonAstValidator {
         });
       }
 
-      // 4. Imports parsing
+      // 4. Imports and Assertion parsing
+      if (trimmed.startsWith('assert ') || trimmed.startsWith('assert(')) {
+        assertionsCount++;
+      }
+
+      if (trimmed.startsWith('"""') || trimmed.startsWith("'''")) {
+        docstringsCount++;
+      }
+
       if (trimmed.startsWith('import ')) {
         const parts = trimmed.slice(7).split(',');
         for (const p of parts) {
@@ -364,10 +390,14 @@ export class PythonAstValidator {
           if (mod) importedModules.add(mod);
         }
       } else if (trimmed.startsWith('from ')) {
-        const fromMatch = trimmed.match(/^from\s+([a-zA-Z0-9_.]+)\s+import/);
+        const fromMatch = trimmed.match(/^from\s+([a-zA-Z0-9_.]+)\s+import\s+(.+)$/);
         if (fromMatch) {
           const mod = fromMatch[1].split('.')[0];
           importedModules.add(mod);
+          const rawSymbols = fromMatch[2].split(',').map((s) => s.trim().split(/\s+as\s+/)[0]).filter(Boolean);
+          for (const sym of rawSymbols) {
+            importedSymbolsList.push({ module: mod, symbol: sym, line: lineNum });
+          }
         }
       }
 
@@ -436,6 +466,9 @@ export class PythonAstValidator {
         hasStubs,
         importedModules: Array.from(importedModules),
         definedSymbols: Array.from(definedSymbols),
+        docstringsCount,
+        assertionsCount,
+        importedSymbols: importedSymbolsList,
       },
       classes,
       functions,
@@ -480,6 +513,7 @@ export class PythonAstValidator {
       }
     }
 
+    // Step 1: Validate each file individually
     for (const [filePath, content] of Object.entries(files)) {
       if (!filePath.endsWith('.py')) {
         continue;
@@ -526,6 +560,36 @@ export class PythonAstValidator {
       }
     }
 
+    // Step 2: Cross-file symbol verification
+    const projectSymbolsMap: Record<string, Set<string>> = {};
+    for (const [filePath, res] of Object.entries(fileResults)) {
+      const baseName = filePath.replace(/\.py$/, '').replace(/^.*\//, '');
+      projectSymbolsMap[baseName] = new Set(res.metrics.definedSymbols);
+      projectSymbolsMap[filePath] = new Set(res.metrics.definedSymbols);
+    }
+
+    for (const [filePath, res] of Object.entries(fileResults)) {
+      for (const imp of res.metrics.importedSymbols || []) {
+        if (projectSymbolsMap[imp.module]) {
+          const available = projectSymbolsMap[imp.module];
+          if (imp.symbol !== '*' && !available.has(imp.symbol)) {
+            crossFileErrors.push(
+              `[cross-file] ${filePath}:${imp.line}: Symbol '${imp.symbol}' imported from '${imp.module}' is not defined in ${imp.module}.py.`
+            );
+          }
+        }
+      }
+    }
+
+    // Step 3: Compute aggregate code quality metrics
+    const totalClasses = Object.values(fileResults).reduce((acc, r) => acc + r.metrics.classesCount, 0);
+    const totalFunctions = Object.values(fileResults).reduce((acc, r) => acc + r.metrics.functionsCount, 0);
+    const totalDocstrings = Object.values(fileResults).reduce((acc, r) => acc + (r.metrics.docstringsCount || 0), 0);
+    const totalAssertions = Object.values(fileResults).reduce((acc, r) => acc + (r.metrics.assertionsCount || 0), 0);
+    const stubsCount = Object.values(fileResults).reduce((acc, r) => acc + (r.metrics.hasStubs ? 1 : 0), 0);
+    const docstringTarget = totalClasses + totalFunctions;
+    const docstringCoverage = docstringTarget > 0 ? Math.min(100, Math.round((totalDocstrings / docstringTarget) * 100)) : 100;
+
     const allValid =
       Object.values(fileResults).every((r) => r.valid) &&
       crossFileErrors.length === 0 &&
@@ -543,6 +607,12 @@ export class PythonAstValidator {
         validFilesCount,
         hasMainEntry,
         hasTestSuite,
+        totalClasses,
+        totalFunctions,
+        totalDocstrings,
+        docstringCoverage,
+        totalAssertions,
+        stubsCount,
       },
     };
   }

@@ -182,13 +182,14 @@ def _find_incomplete_artifacts(files: Dict[str, str]) -> List[str]:
                     if node.name.startswith("__") and node.name.endswith("__"):
                         continue
                     total_funcs += 1
-                    _docstring_nodes = (_ast_stub.Constant,)
-                    _ast_stub_str = getattr(_ast_stub, "Str", None)
-                    if _ast_stub_str is not None:
-                        _docstring_nodes = _docstring_nodes + (_ast_stub_str,)
-                    body = [s for s in node.body
-                            if not isinstance(s, (_ast_stub.Expr,))
-                            or not isinstance(getattr(s, "value", None), _docstring_nodes)]
+                    body = [
+                        s for s in node.body
+                        if not (
+                            isinstance(s, _ast_stub.Expr)
+                            and isinstance(getattr(s, "value", None), _ast_stub.Constant)
+                            and isinstance(s.value.value, str)
+                        )
+                    ]
                     if len(body) == 1:
                         stmt = body[0]
                         if isinstance(stmt, _ast_stub.Pass):

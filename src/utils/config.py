@@ -7,10 +7,11 @@ from pathlib import Path
 from typing import Any, Dict, Optional
 import yaml
 from dotenv import load_dotenv
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict
 
 
 class Config(BaseModel):
+    model_config = ConfigDict(extra="ignore")
     """Global configuration."""
     
     # API Keys
@@ -54,10 +55,6 @@ class Config(BaseModel):
     # Cost Controls
     daily_spending_limit: float = 10.0
     spending_alert_threshold: float = 8.0
-    
-    class Config:
-        env_file = ".env"
-        env_file_encoding = "utf-8"
 
 
 def load_config(config_path: Optional[str] = None) -> Dict[str, Any]:

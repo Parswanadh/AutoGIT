@@ -7,6 +7,7 @@ Perfect for local development.
 """
 
 from langchain_ollama import ChatOllama
+from pydantic import ConfigDict
 from typing import Any, Dict, List, Optional
 import hashlib
 import json
@@ -53,10 +54,7 @@ class LocalCachedLLM(ChatOllama):
         llm = LocalCachedLLM(model="qwen2.5-coder:7b")
     """
     
-    class Config:
-        """Allow extra fields for our cache parameters"""
-        arbitrary_types_allowed = True
-        extra = "allow"
+    model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")
     
     def __init__(
         self,
