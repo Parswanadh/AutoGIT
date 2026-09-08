@@ -1,0 +1,69 @@
+{
+  "content": "UNDO_TEST  AAA BBB World!!!",
+  "revision": 7,
+  "history": [
+    {
+      "type": "insert",
+      "position": 5,
+      "text": " AAA",
+      "length": 0,
+      "client_id": "4265d437",
+      "revision": 0,
+      "op_id": "080bc977-be65-4235-8888-d07882dd0e7d"
+    },
+    {
+      "type": "insert",
+      "position": 9,
+      "text": " BBB",
+      "length": 0,
+      "client_id": "8a7e8197",
+      "revision": 1,
+      "op_id": "64cdf716-e43b-4b27-9f9a-10e67eb7338d"
+    },
+    {
+      "type": "delete",
+      "position": 0,
+      "text": "Hello",
+      "length": 5,
+      "client_id": "89a97f54",
+      "revision": 2,
+      "op_id": "1ac3ca1d-402b-42a1-886a-3090caa57ed0"
+    },
+    {
+      "type": "insert",
+      "position": 14,
+      "text": "!!!",
+      "length": 0,
+      "client_id": "4265d437",
+      "revision": 3,
+      "op_id": "b0cca8a1-110f-4352-9614-4eabaa971060"
+    },
+    {
+      "type": "insert",
+      "position": 0,
+      "text": "UNDO_TEST ",
+      "length": 0,
+      "client_id": "4265d437",
+      "revision": 4,
+      "op_id": "b5366c55-b8d5-400b-ac7b-8e0f42db92b2"
+    },
+    {
+      "type": "delete",
+      "position": 0,
+      "text": "UNDO_TEST ",
+      "length": 10,
+      "client_id": "4265d437",
+      "revision": 5,
+      "op_id": "79b96950-ab14-4d91-b04a-c393bab5fa2b"
+    },
+    {
+      "type": "insert",
+      "position": 0,
+      "text": "UNDO_TEST ",
+      "length": 0,
+      "client_id": "4265d437",
+      "revision": 6,
+      "op_id": "e13d465e-6de3-4c45-9c41-48eae1b39dba"
+    }
+  ]
+}
